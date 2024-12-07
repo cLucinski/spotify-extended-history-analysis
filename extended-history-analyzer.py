@@ -74,6 +74,13 @@ def generate_histogram(data: List[Dict[str, Any]], artist_name: str, min_played_
 
     # Prepare data for the histogram
     df = pd.DataFrame(artist_data)
+
+    # Remove erroneous columns
+    df = df[["ts", 
+            "ms_played", 
+            "master_metadata_track_name", 
+            "master_metadata_album_artist_name", 
+            "master_metadata_album_album_name"]]
     
     # Convert timestamps to datetime and group by month
     if "ts" not in df.columns:
@@ -86,13 +93,18 @@ def generate_histogram(data: List[Dict[str, Any]], artist_name: str, min_played_
     # Count number of listens per month
     listens_per_month = df.groupby("month").size().reset_index(name="num_listens")
 
+    # Count number listens per month, divided by album
+    listens_per_month_album_agg = df.groupby(["month", "master_metadata_album_album_name"]).size().reset_index(name="num_listens")
+    # print(test_df)
+
     # Create and show the histogram
     fig = px.bar(
-        listens_per_month,
+        listens_per_month_album_agg,
         x="month",
         y="num_listens",
+        color="master_metadata_album_album_name",
         title=f"Monthly Number of Listens for {artist_name} (Filtered by {min_played_seconds} seconds)",
-        labels={"month": "Month", "num_listens": "Number of Listens"},
+        labels={"month": "Month", "num_listens": "Number of Listens", "master_metadata_album_album_name": "Album"},
     )
 
     # Force the x-axis range if date_range is specified
@@ -121,6 +133,6 @@ if __name__ == "__main__":
     generate_histogram(
     data,
     target_artist,
-    min_played_seconds=30,
-    date_range=("2019-12", "2024-12")
+    min_played_seconds=30
+    # date_range=("2019-12", "2024-12")
     )
