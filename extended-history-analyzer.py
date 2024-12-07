@@ -215,13 +215,70 @@ def generate_stacked_area_chart(
 
     fig.show()
 
+def display_top_artists(data: List[Dict[str, Any]], top_n: int = 10, min_played_seconds: int = 30, date_range: Tuple[str, str] = None):
+    """
+    Displays the artists with the highest number of song listens, filtered by playback duration and date range.
+
+    Args:
+        data (List[Dict[str, Any]]): The streaming history data.
+        top_n (int): Number of top artists to display. Default is 10.
+        min_played_seconds (int): Minimum playback time (in seconds) to include an entry. Default is 30.
+        date_range (Tuple[str, str]): A tuple of start and end dates in 'YYYY-MM-DD' format to filter data by date range.
+    """
+    # Prepare data
+    df = pd.DataFrame(data)
+
+    # Ensure the necessary columns exist
+    required_columns = {"master_metadata_album_artist_name", "master_metadata_track_name", "ms_played", "ts"}
+    if not required_columns.issubset(df.columns):
+        print(f"The data is missing required fields: {required_columns - set(df.columns)}")
+        return
+
+    # Filter out entries with playback time less than the specified minimum
+    df = df[df["ms_played"] / 1000 >= min_played_seconds]
+
+    # Convert 'ts' column to datetime and ensure it's timezone-naive
+    df["timestamp"] = pd.to_datetime(df["ts"]).dt.tz_localize(None)
+
+    # Filter by date range if specified
+    if date_range:
+        start_date = pd.to_datetime(date_range[0]).tz_localize(None)
+        end_date = pd.to_datetime(date_range[1]).tz_localize(None)
+        df = df[(df["timestamp"] >= start_date) & (df["timestamp"] <= end_date)]
+
+    # Count the number of listens per artist
+    artist_listens = df.groupby("master_metadata_album_artist_name").size().reset_index(name="num_listens")
+
+    # Sort by number of listens in descending order
+    top_artists = artist_listens.sort_values(by="num_listens", ascending=False).head(top_n)
+
+    # Add ranking column
+    top_artists["rank"] = top_artists["num_listens"].rank(method="dense", ascending=False).astype(int)
+
+    # Display the results
+    print(f"Top {top_n} Artists by Number of Song Listens (Filtered by {min_played_seconds} seconds):")
+    print(top_artists.to_string(index=False))
+
+    # Optionally visualize the results
+    fig = px.bar(
+        top_artists,
+        x="master_metadata_album_artist_name",
+        y="num_listens",
+        title=f"Top {top_n} Artists by Number of Song Listens",
+        color="rank",
+        color_continuous_scale=px.colors.sequential.Plasma,
+        labels={"master_metadata_album_artist_name": "Artist", "num_listens": "Number of Listens"},
+    )
+    fig.update_xaxes(type="category")  # Ensure the x-axis is treated as categorical
+    fig.show()
+
 
 # Main execution
 if __name__ == "__main__":
     # Configuration
     file_pattern = "Streaming_History_Audio_*[0-9].json"
     output_file = "spotify_analysis_output.txt"
-    target_artists = ["Chappell Roan"]
+    target_artists = ["HOYO-MiX", "Yu-Peng Chen"]
 
     # Execution
     data = load_files(file_pattern)
@@ -232,7 +289,7 @@ if __name__ == "__main__":
     # data,
     # target_artists,
     # min_played_seconds=30,
-    # date_range=("2024-01", "2024-12")
+    # date_range=("2020-01", "2024-12")
     # )
 
     # generate_stacked_area_chart(
@@ -241,4 +298,12 @@ if __name__ == "__main__":
     # min_played_seconds=30,
     # date_range=("2024-01", "2024-12")
     # )
+
+    display_top_artists(
+    data, 
+    top_n=25, 
+    min_played_seconds=30, 
+    date_range=("2020-01-01", "2024-12-31")
+    )
+
 
