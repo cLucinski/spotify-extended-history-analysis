@@ -126,22 +126,119 @@ def generate_histogram(
     
     fig.show()
 
+def generate_stacked_area_chart(
+        data: List[Dict[str, Any]], 
+        artist_names: List[str], 
+        min_played_seconds: int = 0, 
+        date_range: Tuple[str, str] = None):
+    """
+    Creates an interactive stacked area chart for specific artists' listening data.
+    The x-axis represents dates grouped by month, and the y-axis represents the cumulative number of listens per album.
+    Entries with playback duration shorter than `min_played_seconds` are excluded.
+    
+    Args:
+        data (List[Dict[str, Any]]): The streaming history data.
+        artist_names (List[str]): List of artist names to filter by.
+        min_played_seconds (int): Minimum playback time (in seconds) to include an entry.
+        date_range (Tuple[str, str]): A tuple of start and end dates in 'YYYY-MM-DD' format to force the x-axis range.
+    """
+    # Filter data for the specified artists
+    artist_data = [
+        entry for entry in data
+        if entry.get("master_metadata_album_artist_name") in artist_names
+    ]
+    if not artist_data:
+        print(f"No data found for artists: {', '.join(artist_names)}")
+        return
+
+    # Filter out entries with playback time less than the specified minimum
+    artist_data = [
+        entry for entry in artist_data
+        if entry.get("ms_played", 0) / 1000 >= min_played_seconds
+    ]
+    if not artist_data:
+        print(f"No data remaining after filtering by playback duration for artist(s): {', '.join(artist_names)}")
+        return
+
+    # Prepare data for the chart
+    df = pd.DataFrame(artist_data)
+
+    # Keep relevant columns
+    df = df[["ts", 
+            "ms_played", 
+            "master_metadata_track_name", 
+            "master_metadata_album_artist_name", 
+            "master_metadata_album_album_name"]]
+    
+    # Convert timestamps to datetime and group by month
+    if "ts" not in df.columns:
+        print("Timestamp field 'ts' is missing in data.")
+        return
+
+    df["timestamp"] = pd.to_datetime(df["ts"])  # Assuming "ts" is the timestamp field
+    df["month"] = df["timestamp"].dt.to_period("M").dt.to_timestamp()  # Group by month
+
+    # Aggregate listens per month, divided by album
+    listens_per_month_album_agg = df.groupby(["month", "master_metadata_album_album_name"]).size().reset_index(name="num_listens")
+
+    # Ensure the range includes all months between start and end, filling missing months
+    if date_range:
+        start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+        full_range = pd.date_range(start=start_date, end=end_date, freq="MS")
+        all_albums = listens_per_month_album_agg["master_metadata_album_album_name"].unique()
+        listens_per_month_album_agg = (
+            listens_per_month_album_agg
+            .set_index(["month", "master_metadata_album_album_name"])
+            .reindex(pd.MultiIndex.from_product([full_range, all_albums], names=["month", "master_metadata_album_album_name"]), fill_value=0)
+            .reset_index()
+        )
+
+    # Calculate cumulative listens over time per album
+    listens_per_month_album_agg["cumulative_listens"] = listens_per_month_album_agg.groupby("master_metadata_album_album_name")["num_listens"].cumsum()
+
+    # Create and show the stacked area chart
+    fig = px.area(
+        listens_per_month_album_agg,
+        x="month",
+        y="cumulative_listens",
+        color="master_metadata_album_album_name",
+        title=f"Monthly Cumulative Listens for {', '.join(artist_names)} (Filtered by {min_played_seconds} seconds)",
+        labels={"month": "Month", "cumulative_listens": "Cumulative Listens", "master_metadata_album_album_name": "Album"},
+    )
+
+    # Force the x-axis range if date_range is specified
+    if date_range:
+        fig.update_xaxes(range=[date_range[0], date_range[1]])
+    
+    # Format the x-axis for better readability
+    fig.update_xaxes(dtick="M1", tickformat="%b %Y")  # Format x-axis as 'Month Year'
+
+    fig.show()
+
 
 # Main execution
 if __name__ == "__main__":
     # Configuration
     file_pattern = "Streaming_History_Audio_*[0-9].json"
     output_file = "spotify_analysis_output.txt"
-    target_artists = ["HOYO-MiX", "Yu-Peng Chen", "Robin"]
+    target_artists = ["Chappell Roan"]
 
     # Execution
     data = load_files(file_pattern)
     # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(data)
     # write_results(output_file, data, unique_tracks, unique_artists, total_playback_time_sec)
     
-    generate_histogram(
-    data,
-    target_artists,
-    min_played_seconds=30,
-    # date_range=("2021-06", "2024-12")
-    )
+    # generate_histogram(
+    # data,
+    # target_artists,
+    # min_played_seconds=30,
+    # date_range=("2024-01", "2024-12")
+    # )
+
+    # generate_stacked_area_chart(
+    # data,
+    # target_artists,
+    # min_played_seconds=30,
+    # date_range=("2024-01", "2024-12")
+    # )
+
