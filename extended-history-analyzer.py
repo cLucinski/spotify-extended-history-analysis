@@ -61,7 +61,7 @@ def generate_histogram(
     # Filter data for the specified artists
     artist_data = [
         entry for entry in data
-        if entry.get("master_metadata_album_artist_name") in artist_names
+        # if entry.get("master_metadata_album_artist_name") in artist_names
     ]
     if not artist_data:
         print(f"No data found for artists: {', '.join(artist_names)}")
@@ -93,12 +93,14 @@ def generate_histogram(
 
     df["timestamp"] = pd.to_datetime(df["ts"])  # Assuming "ts" is the timestamp field
     df["month"] = df["timestamp"].dt.to_period("M").dt.to_timestamp()  # Group by month
-
+    df["album_-_artist"] = df['master_metadata_album_album_name'].map(str) + ' - ' + df['master_metadata_album_artist_name'].map(str) 
+    print(df["album_-_artist"][0])
     # Count number of listens per month
     listens_per_month = df.groupby("month").size().reset_index(name="num_listens")
 
     # Count number listens per month, divided by album
-    listens_per_month_album_agg = df.groupby(["month", "master_metadata_album_album_name"]).size().reset_index(name="num_listens")
+    listens_per_month_album_agg = df.groupby(["month", "album_-_artist"]).size().reset_index(name="num_listens")
+    #print(listens_per_month_album_agg.head(5))
 
     # Line specifically to drop an incredibly long Yu-Peng Chen album name
     # listens_per_month_album_agg.drop(listens_per_month_album_agg.index[listens_per_month_album_agg["master_metadata_album_album_name"] == "A Promise of Dreams - The original soundtrack from the game Project Woolgatherer"], inplace=True)
@@ -109,9 +111,9 @@ def generate_histogram(
         listens_per_month_album_agg,
         x="month",
         y="num_listens",
-        color="master_metadata_album_album_name",
+        color="album_-_artist",
         title=f"Monthly Number of Listens for {', '.join(artist_names)} (Filtered by {min_played_seconds} seconds)",
-        labels={"month": "Month", "num_listens": "Number of Listens", "master_metadata_album_album_name": "Album"},
+        labels={"month": "Month", "num_listens": "Number of Listens", "album_-_artist": "Album - Artist"},
     )
 
     # Force the x-axis range if date_range is specified
