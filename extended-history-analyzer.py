@@ -42,10 +42,17 @@ def write_results(output_file: str, combined_data: List[Dict[str, Any]], unique_
     print(f"Analysis results written to {output_file}")
 
 
-def generate_histogram(data: List[Dict[str, Any]], artist_name: str):
+def generate_histogram(data: List[Dict[str, Any]], artist_name: str, min_played_seconds: int = 0, date_range: Tuple[str, str] = None):
     """
     Creates an interactive histogram for a specific artist's listening data.
     The x-axis represents dates grouped by month, and the y-axis represents the number of listens.
+    Entries with playback duration shorter than `min_played_seconds` are excluded.
+    
+    Args:
+        data (List[Dict[str, Any]]): The streaming history data.
+        artist_name (str): The name of the artist to filter by.
+        min_played_seconds (int): Minimum playback time (in seconds) to include an entry.
+        date_range (Tuple[str, str]): A tuple of start and end dates in 'YYYY-MM-DD' format to force the x-axis range.
     """
     # Filter data for the specified artist
     artist_data = [
@@ -54,6 +61,15 @@ def generate_histogram(data: List[Dict[str, Any]], artist_name: str):
     ]
     if not artist_data:
         print(f"No data found for artist: {artist_name}")
+        return
+
+    # Filter out entries with playback time less than the specified minimum
+    artist_data = [
+        entry for entry in artist_data
+        if entry.get("ms_played", 0) / 1000 >= min_played_seconds
+    ]
+    if not artist_data:
+        print(f"No data remaining after filtering by playback duration for artist: {artist_name}")
         return
 
     # Prepare data for the histogram
@@ -75,10 +91,18 @@ def generate_histogram(data: List[Dict[str, Any]], artist_name: str):
         listens_per_month,
         x="month",
         y="num_listens",
-        title=f"Monthly Number of Listens for {artist_name}",
+        title=f"Monthly Number of Listens for {artist_name} (Filtered by {min_played_seconds} seconds)",
         labels={"month": "Month", "num_listens": "Number of Listens"},
     )
+
+    # Force the x-axis range if date_range is specified
+    if date_range:
+        start_date, end_date = date_range
+        fig.update_xaxes(range=[start_date, end_date])
+        
+    # Format the x-axis for better readability
     fig.update_xaxes(dtick="M1", tickformat="%b %Y")  # Format x-axis as 'Month Year'
+    
     fig.show()
 
 
@@ -91,6 +115,12 @@ if __name__ == "__main__":
 
     # Execution
     data = load_files(file_pattern)
-    unique_tracks, unique_artists, total_playback_time_sec = extract_insights(data)
-    write_results(output_file, data, unique_tracks, unique_artists, total_playback_time_sec)
-    generate_histogram(data, target_artist)
+    # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(data)
+    # write_results(output_file, data, unique_tracks, unique_artists, total_playback_time_sec)
+    
+    generate_histogram(
+    data,
+    target_artist,
+    min_played_seconds=30,
+    date_range=("2019-12", "2024-12")
+    )
