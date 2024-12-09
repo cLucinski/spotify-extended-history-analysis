@@ -253,7 +253,7 @@ def display_top_artists(data: List[Dict[str, Any]], top_n: int = 10, min_played_
     top_artists = artist_listens.sort_values(by="num_listens", ascending=False).head(top_n)
 
     # Add ranking column
-    top_artists["rank"] = top_artists["num_listens"].rank(method="dense", ascending=False).astype(int)
+    top_artists["rank"] = top_artists["num_listens"].rank(method="min", ascending=False).astype(int)
 
     # Display the results
     print(f"Top {top_n} Artists by Number of Song Listens (Filtered by {min_played_seconds} seconds):")
@@ -262,21 +262,23 @@ def display_top_artists(data: List[Dict[str, Any]], top_n: int = 10, min_played_
     # Optionally visualize the results
     fig = px.bar(
         top_artists,
-        x="master_metadata_album_artist_name",
-        y="num_listens",
-        title=f"Top {top_n} Artists by Number of Song Listens",
+        y="master_metadata_album_artist_name",
+        x="num_listens",
+        title=f"Top {top_n} Artists by Number of Song Listens ({min_played_seconds} seconds or more) from {date_range[0]} to {date_range[1]}",
         color="rank",
         color_continuous_scale=px.colors.sequential.Plasma,
         labels={"master_metadata_album_artist_name": "Artist", "num_listens": "Number of Listens"},
     )
-    fig.update_xaxes(type="category")  # Ensure the x-axis is treated as categorical
+    # fig.update_xaxes(type="category")  # Ensure the x-axis is treated as categorical
+    fig.update_layout(yaxis=dict(autorange="reversed")) # Uncomment to reverse bars when graph is horizontal
+    fig.update_coloraxes(showscale=False)
     fig.show()
 
 
 # Main execution
 if __name__ == "__main__":
     # Configuration
-    file_pattern = "Streaming_History_Audio_*[0-9].json"
+    file_pattern = "data/chris/Streaming_History_Audio_*[0-9].json"
     output_file = "spotify_analysis_output.txt"
     target_artists = ["HOYO-MiX", "Yu-Peng Chen"]
 
@@ -303,7 +305,7 @@ if __name__ == "__main__":
     data, 
     top_n=25, 
     min_played_seconds=30, 
-    date_range=("2020-01-01", "2024-12-31")
+    date_range=("2024-01-01", "2024-11-29")
     )
 
 
