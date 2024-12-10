@@ -1,4 +1,8 @@
-**The content of this README is the English content found in the `ReadMeFirst_ExtendedStreamingHistory.pdf` file which is included in the data request download from Spotify. (2024)**
+# data  
+
+Use this folder to house your downloaded Spotify listening history files.  
+
+**The content of this README is the English segment found in the `ReadMeFirst_ExtendedStreamingHistory.pdf` file which comes included in the data download from Spotify. (2024)**
 
 ![](https://web-api.textin.com/ocr_image/external/d9b8d00e54c96774.jpg)
 
