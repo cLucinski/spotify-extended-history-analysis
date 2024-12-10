@@ -1,9 +1,16 @@
-import json
+import argparse
 import glob
-from typing import List, Dict, Any, Set, Tuple
-import plotly.express as px
+import json
+import logging
 import pandas as pd
+import plotly.express as px
+from typing import List, Dict, Any, Set, Tuple
 
+parser = argparse.ArgumentParser(description='Analyze Spotify streaming history data.')
+parser.add_argument('-v', '--verbose',
+                    help='Increase output verbosity',
+                    action='store_true',
+                    default=False)
 
 def load_files(file_pattern: str) -> List[Dict[str, Any]]:
     """Loads and combines JSON data from files matching a pattern."""
@@ -47,7 +54,7 @@ def write_results(output_file: str, data: pd.DataFrame, unique_tracks: Set[str],
     with open(output_file, "w", encoding="utf-8") as file:
         file.write("\n".join(output_lines))
 
-    print(f"Analysis results written to {output_file}")
+    logging.info(f"Analysis results written to {output_file}")
 
 def filter_data_by_date_range(df: pd.DataFrame, date_range: Tuple[str, str]) -> pd.DataFrame:
     """
@@ -229,7 +236,7 @@ def create_histogram(
         # Generate histogram
         generate_histogram(histogram_data, search_for, values, min_played_seconds, date_range)
     except ValueError as e:
-        print(e)
+        logging.error(e)
 
 
 def generate_stacked_area_chart(
@@ -255,7 +262,7 @@ def generate_stacked_area_chart(
         if entry.get("master_metadata_album_artist_name") in artist_names
     ]
     if not artist_data:
-        print(f"No data found for artists: {', '.join(artist_names)}")
+        logging.error(f"No data found for artists: {', '.join(artist_names)}")
         return
 
     # Filter out entries with playback time less than the specified minimum
@@ -264,7 +271,7 @@ def generate_stacked_area_chart(
         if entry.get("ms_played", 0) / 1000 >= min_played_seconds
     ]
     if not artist_data:
-        print(f"No data remaining after filtering by playback duration for artist(s): {', '.join(artist_names)}")
+        logging.error(f"No data remaining after filtering by playback duration for artist(s): {', '.join(artist_names)}")
         return
 
     # Prepare data for the chart
@@ -279,7 +286,7 @@ def generate_stacked_area_chart(
     
     # Convert timestamps to datetime and group by month
     if "ts" not in df.columns:
-        print("Timestamp field 'ts' is missing in data.")
+        logging.error("Timestamp field 'ts' is missing in data.")
         return
 
     # Convert timestamps and group by month
@@ -339,7 +346,7 @@ def display_top_artists(data: List[Dict[str, Any]], top_n: int = 10, min_played_
     # Ensure the necessary columns exist
     required_columns = {"master_metadata_album_artist_name", "master_metadata_track_name", "ms_played", "ts"}
     if not required_columns.issubset(df.columns):
-        print(f"The data is missing required fields: {required_columns - set(df.columns)}")
+        logging.error(f"The data is missing required fields: {required_columns - set(df.columns)}")
         return
 
     # Filter out entries with playback time less than the specified minimum
@@ -364,8 +371,8 @@ def display_top_artists(data: List[Dict[str, Any]], top_n: int = 10, min_played_
     top_artists["rank"] = top_artists["num_listens"].rank(method="min", ascending=False).astype(int)
 
     # Display the results
-    print(f"Top {top_n} Artists by Number of Song Listens (Filtered by {min_played_seconds} seconds):")
-    print(top_artists.to_string(index=False))
+    logging.info(f"Top {top_n} Artists by Number of Song Listens (Filtered by {min_played_seconds} seconds):")
+    logging.info(top_artists.to_string(index=False))
 
     # Optionally visualize the results
     fig = px.bar(
@@ -385,6 +392,13 @@ def display_top_artists(data: List[Dict[str, Any]], top_n: int = 10, min_played_
 
 # Main execution
 if __name__ == "__main__":
+
+    args = parser.parse_args()
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s: %(message)s")
+    else:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     # Configuration
     file_pattern = "data/chris/Streaming_History_Audio_*[0-9].json"  # Path to json files
     output_file = "spotify_analysis_output.txt"
