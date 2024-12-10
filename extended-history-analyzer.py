@@ -1,6 +1,6 @@
 import json
 import glob
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Set, Tuple
 import plotly.express as px
 import pandas as pd
 
@@ -21,25 +21,28 @@ def convert_to_dataframe(data: List[Dict[str, Any]]) -> pd.DataFrame:
         raise ValueError("Input data is empty.")
     return pd.DataFrame(data)
 
-def extract_insights(data: List[Dict[str, Any]]) -> Tuple[set, set, float]:
-    """Extract unique tracks, artists, and total playback time."""
-    unique_tracks = {entry.get("master_metadata_track_name") for entry in data if entry.get("master_metadata_track_name")}
-    unique_artists = {entry.get("master_metadata_album_artist_name") for entry in data if entry.get("master_metadata_album_artist_name")}
-    total_playback_time_sec = sum(entry.get("ms_played", 0) for entry in data) / 1000
+def extract_insights(data: pd.DataFrame) -> Tuple[Set[str], Set[str], float]:
+    """Extract unique tracks, artists, and total playback time from a DataFrame."""
+    if "master_metadata_track_name" not in data.columns or "master_metadata_album_artist_name" not in data.columns or "ms_played" not in data.columns:
+        raise ValueError("Required columns are missing in the data.")
+    
+    unique_tracks = set(data["master_metadata_track_name"].dropna().unique())
+    unique_artists = set(data["master_metadata_album_artist_name"].dropna().unique())
+    total_playback_time_sec = data["ms_played"].sum() / 1000  # Convert milliseconds to seconds
+
     return unique_tracks, unique_artists, total_playback_time_sec
 
-
-def write_results(output_file: str, combined_data: List[Dict[str, Any]], unique_tracks: set, unique_artists: set, total_playback_time_sec: float):
+def write_results(output_file: str, data: pd.DataFrame, unique_tracks: Set[str], unique_artists: Set[str], total_playback_time_sec: float):
     """Writes analysis results to a file."""
     output_lines = [
-        f"Total track entries read: {len(combined_data)}",
+        f"Total track entries read: {len(data)}",
         f"Total unique tracks: {len(unique_tracks)}",
         f"Total unique artists: {len(unique_artists)}",
         f"Total playback time (seconds): {total_playback_time_sec:.2f}",
         "\nUnique Tracks:"
-    ] + [f"- {track}" for track in unique_tracks] + [
+    ] + [f"- {track}" for track in sorted(unique_tracks)] + [
         "\nUnique Artists:"
-    ] + [f"- {artist}" for artist in unique_artists]
+    ] + [f"- {artist}" for artist in sorted(unique_artists)]
 
     with open(output_file, "w", encoding="utf-8") as file:
         file.write("\n".join(output_lines))
@@ -331,15 +334,15 @@ if __name__ == "__main__":
     # Execution
     data = load_files(file_pattern)
     df = convert_to_dataframe(data)
-    # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(data)
-    # write_results(output_file, data, unique_tracks, unique_artists, total_playback_time_sec)
+    unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
+    write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
     
-    create_artist_histogram(
-        df, 
-        artist_names=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
-        min_played_seconds=30, 
-        date_range=("2023-01-01", "2024-11-29")
-    )
+    # create_artist_histogram(
+    #     df, 
+    #     artist_names=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
+    #     min_played_seconds=30, 
+    #     date_range=("2023-01-01", "2024-11-29")
+    # )
 
     # generate_stacked_area_chart(
     # data,
