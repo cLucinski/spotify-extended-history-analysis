@@ -177,7 +177,7 @@ def generate_histogram(
             y="num_listens",
             color="master_metadata_album_album_name",
             title=title,
-            labels={"month": "Month", "num_listens": "Number of Listens", "master_metadata_album_album_name": "Album"},
+            labels={"month": "Month", "num_listens": "Number of Listens", "master_metadata_album_album_name": "Album"}
         )
     # Otherwise, don't.
     else:
@@ -186,10 +186,11 @@ def generate_histogram(
             x="month",
             y="num_listens",
             title=title,
-            labels={"month": "Month", "num_listens": "Number of Listens"},
+            labels={"month": "Month", "num_listens": "Number of Listens"}
         )
     
     # Format x-axis
+    # fig.update_layout(bargap=0.90)  # In case bars are too few and too wide.
     fig.update_xaxes(dtick="M1", tickformat="%b %Y")
     fig.show()
 
@@ -402,7 +403,7 @@ if __name__ == "__main__":
     #     search_for="master_metadata_album_artist_name", 
     #     values=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
     #     min_played_seconds=30, 
-    #     date_range=("2024-01-01", "2024-12-31")
+    #     date_range=("2024-01-01", "2024-12-31")  # Optional
     # )
     
     # # Filter by Album(s)
@@ -411,7 +412,7 @@ if __name__ == "__main__":
     #     search_for="master_metadata_album_album_name", 
     #     values=["Over the Garden Wall"], 
     #     min_played_seconds=30, 
-    #     # date_range=("2023-01-01", "2023-12-31")
+    #     # date_range=("2023-01-01", "2023-12-31")  # Optional
     # )
     
     # # Filter by Song(s)
@@ -420,7 +421,7 @@ if __name__ == "__main__":
     #     search_for="master_metadata_track_name", 
     #     values=["Potatus Et Molassus (feat. Audio Clayton)"], 
     #     min_played_seconds=10, 
-    #     # date_range=("2023-01-01", "2023-12-31")
+    #     # date_range=("2023-01-01", "2023-12-31")  # Optional
     # )
 
     # generate_stacked_area_chart(
