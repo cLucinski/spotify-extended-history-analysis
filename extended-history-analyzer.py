@@ -15,6 +15,11 @@ def load_files(file_pattern: str) -> List[Dict[str, Any]]:
             combined_data.extend(data)
     return combined_data
 
+def convert_to_dataframe(data: List[Dict[str, Any]]) -> pd.DataFrame:
+    """Converts raw data into a pandas DataFrame."""
+    if not data:
+        raise ValueError("Input data is empty.")
+    return pd.DataFrame(data)
 
 def extract_insights(data: List[Dict[str, Any]]) -> Tuple[set, set, float]:
     """Extract unique tracks, artists, and total playback time."""
@@ -41,90 +46,132 @@ def write_results(output_file: str, combined_data: List[Dict[str, Any]], unique_
 
     print(f"Analysis results written to {output_file}")
 
-
-def generate_histogram(
-        data: List[Dict[str, Any]], 
-        artist_names: List[str], 
-        min_played_seconds: int = 0, 
-        date_range: Tuple[str, str] = None):
+def filter_data_by_date_range(df: pd.DataFrame, date_range: Tuple[str, str]) -> pd.DataFrame:
     """
-    Creates an interactive histogram for a specific artist's listening data.
-    The x-axis represents dates grouped by month, and the y-axis represents the number of listens.
-    Entries with playback duration shorter than `min_played_seconds` are excluded.
+    Filters a DataFrame to include only rows within a specified date range.
     
     Args:
-        data (List[Dict[str, Any]]): The streaming history data.
-        artist_names (List[str]): List of artist names to filter by.
-        min_played_seconds (int): Minimum playback time (in seconds) to include an entry.
-        date_range (Tuple[str, str]): A tuple of start and end dates in 'YYYY-MM-DD' format to force the x-axis range.
-    """
-    # Filter data for the specified artists
-    artist_data = [
-        entry for entry in data
-        if entry.get("master_metadata_album_artist_name") in artist_names
-    ]
-    if not artist_data:
-        print(f"No data found for artists: {', '.join(artist_names)}")
-        return
-
-    # Filter out entries with playback time less than the specified minimum
-    artist_data = [
-        entry for entry in artist_data
-        if entry.get("ms_played", 0) / 1000 >= min_played_seconds
-    ]
-    if not artist_data:
-        print(f"No data remaining after filtering by playback duration for artist(s): {', '.join(artist_names)}")
-        return
-
-    # Prepare data for the histogram
-    df = pd.DataFrame(artist_data)
-
-    # Remove erroneous columns
-    df = df[["ts", 
-            "ms_played", 
-            "master_metadata_track_name", 
-            "master_metadata_album_artist_name", 
-            "master_metadata_album_album_name"]]
+        df (pd.DataFrame): The DataFrame containing the data.
+        date_range (Tuple[str, str]): A tuple of start and end dates in 'YYYY-MM-DD' format.
+        
+    Returns:
+        pd.DataFrame: A DataFrame containing only rows within the specified date range.
     
-    # Convert timestamps to datetime and group by month
+    Raises:
+        ValueError: If required columns are missing or if the filtered DataFrame is empty.
+    """
     if "ts" not in df.columns:
-        print("Timestamp field 'ts' is missing in data.")
-        return
+        raise ValueError("The DataFrame must contain a 'ts' column with timestamps.")
 
-    df["timestamp"] = pd.to_datetime(df["ts"])  # Assuming "ts" is the timestamp field
-    df["month"] = df["timestamp"].dt.to_period("M").dt.to_timestamp()  # Group by month
+    start_date, end_date = date_range
+    try:
+        # Ensure the 'ts' column is in datetime format
+        df["ts"] = pd.to_datetime(df["ts"])
 
-    # Count number of listens per month
-    listens_per_month = df.groupby("month").size().reset_index(name="num_listens")
+        # Filter by the date range
+        filtered_df = df[(df["ts"] >= start_date) & (df["ts"] <= end_date)]
 
-    # Count number listens per month, divided by album
-    listens_per_month_album_agg = df.groupby(["month", "master_metadata_album_album_name"]).size().reset_index(name="num_listens")
+        if filtered_df.empty:
+            raise ValueError(f"No data found in the specified date range: {start_date} to {end_date}.")
+        
+        return filtered_df
+    except Exception as e:
+        raise ValueError(f"Failed to filter data by date range: {e}")
 
-    # Line specifically to drop an incredibly long Yu-Peng Chen album name
-    # listens_per_month_album_agg.drop(listens_per_month_album_agg.index[listens_per_month_album_agg["master_metadata_album_album_name"] == "A Promise of Dreams - The original soundtrack from the game Project Woolgatherer"], inplace=True)
-    # print(test_df)
+def filter_by_artist(df: pd.DataFrame, artist_names: List[str]) -> pd.DataFrame:
+    """Filters the DataFrame to include only rows for the specified artists."""
+    if "master_metadata_album_artist_name" not in df.columns:
+        raise ValueError("Required column 'master_metadata_album_artist_name' is missing in the data.")
+    filtered_df = df[df["master_metadata_album_artist_name"].isin(artist_names)]
+    if filtered_df.empty:
+        raise ValueError(f"No data found for artists: {', '.join(artist_names)}")
+    return filtered_df
 
-    # Create and show the histogram
+def filter_by_playback_time(df: pd.DataFrame, min_played_seconds: int) -> pd.DataFrame:
+    """Filters the DataFrame to include only rows where playback time meets the minimum threshold."""
+    if "ms_played" not in df.columns:
+        raise ValueError("Required column 'ms_played' is missing in the data.")
+    filtered_df = df[df["ms_played"] / 1000 >= min_played_seconds]
+    if filtered_df.empty:
+        raise ValueError(f"No data remaining after filtering by playback duration >= {min_played_seconds} seconds.")
+    return filtered_df
+
+def filter_data_by_artist_and_playtime(df: pd.DataFrame, artist_names: List[str], min_played_seconds: int) -> pd.DataFrame:
+    """Converts raw data to a DataFrame and applies artist and playback time filters."""
+    try:
+        artist_filtered_df = filter_by_artist(df, artist_names)
+        time_filtered_df = filter_by_playback_time(artist_filtered_df, min_played_seconds)
+        return time_filtered_df
+    except ValueError as e:
+        raise ValueError(f"Data filtering failed: {e}")
+
+def prepare_artist_histogram_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Prepares data for the histogram by grouping listens per month and album."""
+    # Ensure required columns are present
+    required_columns = ["ts", "master_metadata_album_album_name"]
+    if not all(col in df.columns for col in required_columns):
+        raise ValueError(f"Data is missing required columns: {required_columns}")
+    
+    # Convert timestamps and group by month
+    df["timestamp"] = pd.to_datetime(df["ts"]).dt.tz_localize(None)
+    df["month"] = df["timestamp"].dt.to_period("M").dt.to_timestamp()
+    
+    # Group listens per month and album
+    listens_per_month_album_agg = df.groupby(
+        ["month", "master_metadata_album_album_name"]
+    ).size().reset_index(name="num_listens")
+    
+    return listens_per_month_album_agg
+
+def generate_artist_histogram(
+        listens_per_month_album_agg: pd.DataFrame, 
+        artist_names: List[str], 
+        min_played_seconds: int, 
+        date_range: Tuple[str, str] = None
+    ):
+    """Generates and displays an interactive histogram."""
+    title = (f"Monthly Number of Listens for {', '.join(artist_names)} "
+             f"(Filtered by {min_played_seconds} seconds)")
+    
     fig = px.bar(
         listens_per_month_album_agg,
         x="month",
         y="num_listens",
         color="master_metadata_album_album_name",
-        title=f"Monthly Number of Listens for {', '.join(artist_names)} (Filtered by {min_played_seconds} seconds)",
-        labels={"month": "Month", "num_listens": "Number of Listens", "master_metadata_album_album_name": "Album"},
+        title=title,
+        labels={"month": "Month", "num_listens": "Number of Listens", 
+                "master_metadata_album_album_name": "Album"}
     )
-
-    # Force the x-axis range if date_range is specified
-    if date_range:
-        start_date, end_date = date_range
-        fig.update_xaxes(range=[start_date, end_date])
     
-    # fig.update_yaxes(range=[0, 850])
-        
-    # Format the x-axis for better readability
-    fig.update_xaxes(dtick="M1", tickformat="%b %Y")  # Format x-axis as 'Month Year'
+    # # Adjust x-axis range if a date range is provided
+    # if date_range:
+    #     start_date, end_date = date_range
+    #     fig.update_xaxes(range=[start_date, end_date])
     
+    # Format x-axis
+    fig.update_xaxes(dtick="M1", tickformat="%b %Y")
     fig.show()
+
+def create_artist_histogram(
+        df: pd.DataFrame, 
+        artist_names: List[str], 
+        min_played_seconds: int = 0, 
+        date_range: Tuple[str, str] = None
+    ):
+    """Creates a histogram for artist listening data."""
+    
+    try:        
+        filtered_data = filter_data_by_artist_and_playtime(df, artist_names, min_played_seconds)
+        
+        # Filter for date range, if provided
+        if date_range:
+            filtered_data = filter_data_by_date_range(filtered_data, date_range)
+        
+        histogram_data = prepare_artist_histogram_data(filtered_data)
+        generate_artist_histogram(histogram_data, artist_names, min_played_seconds, date_range)
+    except ValueError as e:
+        print(e)
+
 
 def generate_stacked_area_chart(
         data: List[Dict[str, Any]], 
@@ -212,7 +259,6 @@ def generate_stacked_area_chart(
     
     # Format the x-axis for better readability
     fig.update_xaxes(dtick="M1", tickformat="%b %Y")  # Format x-axis as 'Month Year'
-
     fig.show()
 
 def display_top_artists(data: List[Dict[str, Any]], top_n: int = 10, min_played_seconds: int = 30, date_range: Tuple[str, str] = None):
@@ -284,15 +330,16 @@ if __name__ == "__main__":
 
     # Execution
     data = load_files(file_pattern)
+    df = convert_to_dataframe(data)
     # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(data)
     # write_results(output_file, data, unique_tracks, unique_artists, total_playback_time_sec)
     
-    # generate_histogram(
-    # data,
-    # target_artists,
-    # min_played_seconds=30,
-    # date_range=("2020-01", "2024-12")
-    # )
+    create_artist_histogram(
+        df, 
+        artist_names=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
+        min_played_seconds=30, 
+        date_range=("2023-01-01", "2024-11-29")
+    )
 
     # generate_stacked_area_chart(
     # data,
@@ -301,11 +348,11 @@ if __name__ == "__main__":
     # date_range=("2024-01", "2024-12")
     # )
 
-    display_top_artists(
-    data, 
-    top_n=25, 
-    min_played_seconds=30, 
-    date_range=("2024-01-01", "2024-11-29")
-    )
+    # display_top_artists(
+    # data, 
+    # top_n=25, 
+    # min_played_seconds=30, 
+    # date_range=("2024-01-01", "2024-11-29")
+    # )
 
 
