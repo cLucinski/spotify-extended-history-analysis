@@ -408,7 +408,7 @@ def display_top_artists(
     fig.show()
 
 
-def create_rank_chart(
+def create_top_n_chart(
         df: pd.DataFrame,
         top_n: int,
         search_category: str,
@@ -445,9 +445,23 @@ def create_rank_chart(
     
     # Add ranking column
     top_entries["rank"] = range(1, len(top_entries) + 1)
+
+    # A match-case to define the title and y-axis label based on search category
+    # category_labels[0] is plural
+    # category_labels[1] is singular
+    match search_category:
+        case "master_metadata_album_artist_name":
+            category_labels = ["Artists", "Artist"]
+        case "master_metadata_album_album_name":
+            category_labels = ["Albums", "Album"]
+        case "master_metadata_track_name":
+            category_labels = ["Songs", "Song"]
+        case _:
+            category_labels = ["[undefined]", "[undefined]"]
+
     
     # Plot the results
-    title = f"Top {top_n} {search_category.replace('_', ' ').title()} by Number of Listens"
+    title = f"Top {top_n} {category_labels[0]} by Number of Listens"
     if date_range:
         title += f" ({date_range[0]} to {date_range[1]})"
     
@@ -459,7 +473,7 @@ def create_rank_chart(
         color="rank",
         color_continuous_scale=px.colors.sequential.Plasma,
         labels={
-            search_category: search_category.replace('_', ' ').title(),
+            search_category: category_labels[1],
             "num_listens": "Number of Listens"
         }
     )
@@ -480,7 +494,7 @@ if __name__ == "__main__":
     # Configuration
     file_pattern = "data/chris/Streaming_History_Audio_*[0-9].json"  # Path to json files
     output_file = "spotify_analysis_output.txt"
-    target_artists = ["HOYO-MiX", "Yu-Peng Chen", "Robin"]
+    target_artists = ["Coldplay"]
 
     # Execution
     data = load_files(file_pattern)
@@ -492,7 +506,7 @@ if __name__ == "__main__":
     # # Filter by Artist(s)
     # create_histogram(
     #     df, 
-    #     search_for="master_metadata_album_artist_name", 
+    #     search_category="master_metadata_album_artist_name", 
     #     values=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
     #     min_played_seconds=30, 
     #     date_range=("2024-01-01", "2024-12-31")  # Optional
@@ -501,7 +515,7 @@ if __name__ == "__main__":
     # # Filter by Album(s)
     # create_histogram(
     #     df, 
-    #     search_for="master_metadata_album_album_name", 
+    #     search_category="master_metadata_album_album_name", 
     #     values=["Over the Garden Wall"], 
     #     min_played_seconds=30, 
     #     # date_range=("2023-01-01", "2023-12-31")  # Optional
@@ -510,8 +524,8 @@ if __name__ == "__main__":
     # # Filter by Song(s)
     # create_histogram(
     #     df, 
-    #     search_for="master_metadata_track_name", 
-    #     values=["Potatus Et Molassus (feat. Audio Clayton)"], 
+    #     search_category="master_metadata_track_name", 
+    #     values=["The Highwayman (feat. Jerron 'Blind Boy' Paxton)"], 
     #     min_played_seconds=10, 
     #     # date_range=("2023-01-01", "2023-12-31")  # Optional
     # )
@@ -530,7 +544,7 @@ if __name__ == "__main__":
     #     date_range=("2024-01-01", "2024-12-31")
     # )
 
-    create_rank_chart(
+    create_top_n_chart(
         df, 
         top_n=5,
         search_category="master_metadata_album_album_name",
