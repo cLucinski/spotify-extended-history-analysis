@@ -439,12 +439,15 @@ def create_top_n_chart(
     
     # Count the number of listens by the search category
     grouped_df = filtered_df.groupby(search_category).size().reset_index(name="num_listens")
-    
-    # Sort and select the top entries
-    top_entries = grouped_df.sort_values(by="num_listens", ascending=False).head(top_n)
-    
-    # Add ranking column
-    top_entries["rank"] = range(1, len(top_entries) + 1)
+
+    # Sort by the number of listens in descending order
+    grouped_df = grouped_df.sort_values(by="num_listens", ascending=False)
+
+    # Add ranking column with "min" method to handle ties
+    grouped_df["rank"] = grouped_df["num_listens"].rank(method="min", ascending=False).astype(int)
+
+    # Select the top entries
+    top_entries = grouped_df[grouped_df["rank"] <= top_n]
 
     # A match-case to define the title and y-axis label based on search category
     # category_labels[0] is plural
