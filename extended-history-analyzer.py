@@ -74,6 +74,10 @@ def filter_data_by_date_range(df: pd.DataFrame, date_range: Tuple[str, str]) -> 
         raise ValueError("The DataFrame must contain a 'ts' column with timestamps.")
 
     start_date, end_date = date_range
+    
+    # Create a copy to avoid modifying the original DataFrame
+    df = df.copy()
+    
     try:
         # Ensure the 'ts' column is in datetime format
         df["ts"] = pd.to_datetime(df["ts"])
@@ -100,36 +104,36 @@ def filter_by_playback_time(df: pd.DataFrame, min_played_seconds: int) -> pd.Dat
     return filtered_df
 
 
-def filter_by_group(df: pd.DataFrame, search_for: str, values: List[str]) -> pd.DataFrame:
+def filter_by_group(df: pd.DataFrame, search_category: str, values: List[str]) -> pd.DataFrame:
     """
     Filters the DataFrame based on the specified grouping column (e.g., artist, album, or song).
     
     Args:
         df (pd.DataFrame): The DataFrame containing the data.
-        search_for (str): The column to filter by (e.g., 'master_metadata_album_artist_name', 
+        search_category (str): The column to filter by (e.g., 'master_metadata_album_artist_name', 
                         'master_metadata_album_album_name', or 'master_metadata_track_name').
         values (List[str]): The values to filter by (e.g., a list of artist names, album names, or song names).
         
     Returns:
         pd.DataFrame: The filtered DataFrame.
     """
-    if search_for not in df.columns:
-        raise ValueError(f"Required column '{search_for}' is missing in the data.")
+    if search_category not in df.columns:
+        raise ValueError(f"Required column '{search_category}' is missing in the data.")
 
-    filtered_df = df[df[search_for].isin(values)]
+    filtered_df = df[df[search_category].isin(values)]
 
     if filtered_df.empty:
-        raise ValueError(f"No data found for the specified values in column '{search_for}'.")
+        raise ValueError(f"No data found for the specified values in column '{search_category}'.")
     
     return filtered_df
 
-def prepare_histogram_data(df: pd.DataFrame, search_for: str) -> pd.DataFrame:
+def prepare_histogram_data(df: pd.DataFrame, search_category: str) -> pd.DataFrame:
     """
     Prepares data for a histogram by grouping listens per month by the specified column.
     
     Args:
         df (pd.DataFrame): The DataFrame containing the data.
-        search_for (str): The column to group by (e.g., artist, album, or song).
+        search_category (str): The column to group by (e.g., artist, album, or song).
         
     Returns:
         pd.DataFrame: Aggregated data for the histogram.
@@ -141,7 +145,9 @@ def prepare_histogram_data(df: pd.DataFrame, search_for: str) -> pd.DataFrame:
     df["timestamp"] = pd.to_datetime(df["ts"]).dt.tz_localize(None)
     df["month"] = df["timestamp"].dt.to_period("M").dt.to_timestamp()
 
-    match search_for:
+    # If searching for an artist, also group by their albums to create an aggregate of that for the chart's bars.
+    # Otherwise, just group by month.
+    match search_category:
         case "master_metadata_album_artist_name":
             # If searching for artist, include album data
             listens_per_month = df.groupby(["month", "master_metadata_album_album_name"]).size().reset_index(name="num_listens")
@@ -149,6 +155,7 @@ def prepare_histogram_data(df: pd.DataFrame, search_for: str) -> pd.DataFrame:
             # Searching for album, just group by month
             listens_per_month = df.groupby(["month"]).size().reset_index(name="num_listens")
 
+    # TODO: verify the following line isn't needed
     # Group listens per month by the specified column
     listens_per_month = df.groupby(["month", "master_metadata_album_album_name"]).size().reset_index(name="num_listens")
     
@@ -156,7 +163,7 @@ def prepare_histogram_data(df: pd.DataFrame, search_for: str) -> pd.DataFrame:
 
 def generate_histogram(
         listens_per_month: pd.DataFrame, 
-        search_for: str, 
+        search_category: str, 
         values: List[str], 
         min_played_seconds: int, 
         date_range: Tuple[str, str] = None
@@ -166,7 +173,7 @@ def generate_histogram(
     
     Args:
         listens_per_month (pd.DataFrame): Aggregated data for the histogram.
-        search_for (str): The column to group by (e.g., artist, album, or song).
+        search_category (str): The column to group by (e.g., artist, album, or song).
         values (List[str]): The values to display (e.g., artist names, album names, or song names).
         min_played_seconds (int): Minimum playback time (in seconds) to filter by.
         date_range (Tuple[str, str]): Optional date range for the x-axis.
@@ -174,10 +181,11 @@ def generate_histogram(
     title = f"Monthly Number of Listens ({min_played_seconds} seconds or more) for {', '.join(values)} "
     if date_range:
         title = title + f"from {date_range[0]} to {date_range[1]}"
-             
-
+    else:
+        title = title + "of All Time"
+    
     # If searching for Artist, add colours to group by Albums
-    if search_for == "master_metadata_album_artist_name":
+    if search_category == "master_metadata_album_artist_name":
         fig = px.bar(
             listens_per_month,
             x="month",
@@ -203,7 +211,7 @@ def generate_histogram(
 
 def create_histogram(
         df: pd.DataFrame, 
-        search_for: str, 
+        search_category: str, 
         values: List[str], 
         min_played_seconds: int = 0, 
         date_range: Tuple[str, str] = None
@@ -213,7 +221,7 @@ def create_histogram(
     
     Args:
         df (pd.DataFrame): The DataFrame containing the data.
-        search_for (str): The column to group by (e.g., 'master_metadata_album_artist_name', 
+        search_category (str): The column to group by (e.g., 'master_metadata_album_artist_name', 
                         'master_metadata_album_album_name', or 'master_metadata_track_name').
         values (List[str]): The values to filter by (e.g., a list of artist names, album names, or song names).
         min_played_seconds (int): Minimum playback time (in seconds) to filter by.
@@ -221,7 +229,7 @@ def create_histogram(
     """
     try:
         # Filter data by group (artist, album, or song)
-        filtered_data = filter_by_group(df, search_for, values)
+        filtered_data = filter_by_group(df, search_category, values)
 
         # Filter data by playtime
         filtered_data = filter_by_playback_time(filtered_data, min_played_seconds)
@@ -231,10 +239,10 @@ def create_histogram(
             filtered_data = filter_data_by_date_range(filtered_data, date_range)
 
         # Prepare histogram data
-        histogram_data = prepare_histogram_data(filtered_data, search_for)
+        histogram_data = prepare_histogram_data(filtered_data, search_category)
 
         # Generate histogram
-        generate_histogram(histogram_data, search_for, values, min_played_seconds, date_range)
+        generate_histogram(histogram_data, search_category, values, min_played_seconds, date_range)
     except ValueError as e:
         logging.error(e)
 
@@ -330,7 +338,11 @@ def generate_stacked_area_chart(
     fig.update_xaxes(dtick="M1", tickformat="%b %Y")  # Format x-axis as 'Month Year'
     fig.show()
 
-def display_top_artists(data: List[Dict[str, Any]], top_n: int = 10, min_played_seconds: int = 30, date_range: Tuple[str, str] = None):
+def display_top_artists(
+        data: List[Dict[str, Any]], 
+        top_n: int = 10, 
+        min_played_seconds: int = 30, 
+        date_range: Tuple[str, str] = None):
     """
     Displays the artists with the highest number of song listens, filtered by playback duration and date range.
 
@@ -370,22 +382,88 @@ def display_top_artists(data: List[Dict[str, Any]], top_n: int = 10, min_played_
     # Add ranking column
     top_artists["rank"] = top_artists["num_listens"].rank(method="min", ascending=False).astype(int)
 
-    # Display the results
-    logging.info(f"Top {top_n} Artists by Number of Song Listens (Filtered by {min_played_seconds} seconds):")
-    logging.info(top_artists.to_string(index=False))
+    # # Display the results
+    # logging.info(f"Top {top_n} Artists by Number of Song Listens (Filtered by {min_played_seconds} seconds):")
+    # logging.info(top_artists.to_string(index=False))
 
+    title = f"Top {top_n} Artists by Number of Listens ({min_played_seconds} seconds or more) "
+    if date_range:
+        title = title + f"from {date_range[0]} to {date_range[1]}"
+    else:
+        title = title + "of All Time"
+    
     # Optionally visualize the results
     fig = px.bar(
         top_artists,
         y="master_metadata_album_artist_name",
         x="num_listens",
-        title=f"Top {top_n} Artists by Number of Song Listens ({min_played_seconds} seconds or more) from {date_range[0]} to {date_range[1]}",
+        title=title,
         color="rank",
         color_continuous_scale=px.colors.sequential.Plasma,
         labels={"master_metadata_album_artist_name": "Artist", "num_listens": "Number of Listens"},
     )
     # fig.update_xaxes(type="category")  # Ensure the x-axis is treated as categorical
     fig.update_layout(yaxis=dict(autorange="reversed")) # Uncomment to reverse bars when graph is horizontal
+    fig.update_coloraxes(showscale=False)
+    fig.show()
+
+
+def create_rank_chart(
+        df: pd.DataFrame,
+        top_n: int,
+        search_category: str,
+        min_played_seconds: int = 0,
+        date_range: Tuple[str, str] = None
+    ):
+    """
+    Creates a bar chart for ranking top artists, albums, or songs by number of listens.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        top_n (int): Number of top entries to display.
+        search_category (str): The column to group by (e.g., 'master_metadata_album_artist_name', 
+                        'master_metadata_album_album_name', or 'master_metadata_track_name').
+        min_played_seconds (int): Minimum playback time (in seconds) to filter by.
+        date_range (Tuple[str, str]): Optional date range for filtering data.
+    """
+    # Validate required columns
+    if search_category not in df.columns or 'ms_played' not in df.columns:
+        raise ValueError(f"The data is missing required fields: '{search_category}' or 'ms_played'")
+    
+    # Filter by playback time
+    filtered_df = filter_by_playback_time(df, min_played_seconds)
+    
+    # Filter by date range if provided
+    if date_range:
+        filtered_df = filter_data_by_date_range(filtered_df, date_range)
+    
+    # Count the number of listens by the search category
+    grouped_df = filtered_df.groupby(search_category).size().reset_index(name="num_listens")
+    
+    # Sort and select the top entries
+    top_entries = grouped_df.sort_values(by="num_listens", ascending=False).head(top_n)
+    
+    # Add ranking column
+    top_entries["rank"] = range(1, len(top_entries) + 1)
+    
+    # Plot the results
+    title = f"Top {top_n} {search_category.replace('_', ' ').title()} by Number of Listens"
+    if date_range:
+        title += f" ({date_range[0]} to {date_range[1]})"
+    
+    fig = px.bar(
+        top_entries,
+        y=search_category,
+        x="num_listens",
+        title=title,
+        color="rank",
+        color_continuous_scale=px.colors.sequential.Plasma,
+        labels={
+            search_category: search_category.replace('_', ' ').title(),
+            "num_listens": "Number of Listens"
+        }
+    )
+    fig.update_layout(yaxis=dict(autorange="reversed"))  # Reverse bar order for better readability
     fig.update_coloraxes(showscale=False)
     fig.show()
 
@@ -445,11 +523,19 @@ if __name__ == "__main__":
     #     min_played_seconds=30
     # )
 
-    display_top_artists(
-        data, 
-        top_n=25, 
-        min_played_seconds=30, 
-        date_range=("2024-01-01", "2024-11-29")
+    # display_top_artists(
+    #     data, 
+    #     top_n=5, 
+    #     min_played_seconds=30, 
+    #     date_range=("2024-01-01", "2024-12-31")
+    # )
+
+    create_rank_chart(
+        df, 
+        top_n=5,
+        search_category="master_metadata_album_album_name",
+        min_played_seconds=30,
+        date_range=("2024-01-01", "2024-12-31")  # Optional
     )
 
 
