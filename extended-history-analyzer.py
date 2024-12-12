@@ -390,7 +390,30 @@ def get_category_labels(search_category: str):
     return category_labels
 
 
-def generate_ranking_chart(
+def get_top_n_chart_title(
+        top_n: int, 
+        category_label: str,
+        min_played_seconds: int, 
+        date_range: Tuple[str, str] = None):
+    """
+    Generates the title for the top n ranking chart
+
+    Args:
+        top_n (int): Number of top entries displayed.
+        category_label (str): Search category type.
+        min_played_seconds (int): Minimum playback time (in seconds) to filter by.
+        date_range (Tuple[str, str]): Optional date range for the chart title.
+    """
+    
+    title = f"Top {top_n} {category_label} by Number of Listens ({min_played_seconds} seconds or more) "
+    if date_range:
+        title = title + f"from {date_range[0]} to {date_range[1]}"
+    else:
+        title = title + "of All Time"
+    return title
+
+
+def build_top_n_chart_by_listens(
         ranked_data: pd.DataFrame,
         search_category: str,
         title: str,
@@ -403,7 +426,7 @@ def generate_ranking_chart(
         ranked_data (pd.DataFrame): The ranked data to plot.
         search_category (str): The column representing the ranking category.
         title (str): The title for the bar chart.
-        category_labels (str): Label for the y-axis.
+        category_label (str): Label for the y-axis.
     """
     
     fig = px.bar(
@@ -423,30 +446,7 @@ def generate_ranking_chart(
     fig.show()
 
 
-def get_top_n_chart_title(
-        top_n: int, 
-        category_label: str,
-        min_played_seconds: int, 
-        date_range: Tuple[str, str]):
-    """
-    Generates the title for the top n ranking chart
-
-    Args:
-        top_n (int): Number of top entries displayed.
-        category_label (str): Search category type.
-        min_played_seconds (int): Minimum playback time (in seconds) to filter by.
-        date_range (Tuple[str, str]): Optional date range for the chart title.
-    """
-    
-    title = f"Top {top_n} {category_label} by Number of Listens ({min_played_seconds} seconds or more) "
-    if date_range:
-        title = title + f"from {date_range[0]} to {date_range[1]}"
-    else:
-        title = title + "of All Time"
-    return title
-
-
-def create_top_n_chart(
+def create_top_n_chart_by_listens(
         df: pd.DataFrame,
         top_n: int,
         search_category: str,
@@ -459,7 +459,7 @@ def create_top_n_chart(
     Args:
         df (pd.DataFrame): The DataFrame containing the data.
         top_n (int): Number of top entries to display.
-        search_category (str): The column to group by (e.g., artist, album, or song).
+        search_category (str): The column to group by.
         min_played_seconds (int): Minimum playback time (in seconds) to filter by.
         date_range (Tuple[str, str]): Optional date range for filtering data.
     """
@@ -479,7 +479,7 @@ def create_top_n_chart(
         title = get_top_n_chart_title(top_n, category_labels[0], min_played_seconds, date_range)
 
         # Generate the chart
-        generate_ranking_chart(ranked_data, search_category, title, category_labels[1])
+        build_top_n_chart_by_listens(ranked_data, search_category, title, category_labels[1])
 
     except ValueError as e:
         logging.error(e)
@@ -513,6 +513,93 @@ def prepare_ranking_data_with_time_units(df: pd.DataFrame, search_category: str,
     return grouped_df[grouped_df["rank"] <= top_n]
 
 
+def get_top_n_playtime_chart_titles(
+        top_n: int, 
+        min_played_seconds: int, 
+        category_label: str,
+        date_range: Tuple[str, str] = None,
+    ):
+    """
+    Generates a main title and subtitle for a bar chart showcasing top entities by total playtime.
+
+    Args:
+        top_n (int): The number of top-ranked entities to display.
+        min_played_seconds (int): The minimum playback time (in seconds) for a track to be considered.
+        category_label (str): Search category type.
+        date_range (Tuple[str, str] or None): A tuple specifying the start and end dates for filtering the data.
+
+    Returns:
+        Tuple[str, str]: A tuple containing:
+            - `title` (str): The main title for the chart, indicating the category, time range, and playtime metric.
+            - `subtitle` (str): A subtitle providing details about the playback threshold.
+    """
+    title = f"Top {top_n} {category_label} by Total Playtime (minutes)"
+    if date_range:
+        title += f" from {date_range[0]} to {date_range[1]}"
+    else:
+        title = title + "of All Time"
+        
+    subtitle = f"(Only considers tracks played for at least {min_played_seconds} seconds.)"
+
+    titles = title, subtitle
+    return titles
+
+
+def build_top_n_chart_by_playtime(
+        ranked_data: pd.DataFrame, 
+        search_category: str, 
+        titles: Tuple[str, str],
+        category_label: str, 
+    ):
+    """
+    Generates and displays a bar chart for top-ranked entities (e.g., artists, albums, songs) 
+    based on total playtime, with enhanced hover information.
+    
+    Args:
+        ranked_data (pd.DataFrame): A DataFrame containing the aggregated and ranked data.
+            Must include columns:
+                - 'total_playtime_minutes': Total playtime in minutes for chart scaling.
+                - 'total_playtime_hours': Total playtime in hours for hover information.
+                - 'rank': Rank of each entity.
+        search_category (str): The column representing the ranking category 
+            (e.g., 'master_metadata_album_artist_name', 'master_metadata_album_album_name', or 'master_metadata_track_name').
+        titles (Tuple[str, str]): The title and subtitle for the chart: 
+            - Chart title = titles[0].
+            - Chart subtitle = titles[1].
+        category_label (str): Label for the y-axis.
+    
+    Returns:
+        None: Displays an interactive bar chart using Plotly.
+    """
+    fig = px.bar(
+            ranked_data,
+            y=search_category,
+            x="total_playtime_minutes",
+            title=titles[0],
+            color="rank",
+            color_continuous_scale=px.colors.sequential.Plasma,
+            labels={
+                search_category: category_label,
+                "total_playtime_minutes": "Total Playtime (minutes)"
+            },
+            hover_data={
+                "total_playtime_minutes": True,
+                "total_playtime_hours": ":.2f",  # Show hours with two decimal places
+                "rank": True,  # Hide rank in hover (optional)
+            }
+        )
+    fig.update_layout(
+        yaxis=dict(autorange="reversed"),  # Reverse bar order for better readability
+        title=dict(
+            subtitle=dict(
+                text=titles[1], 
+                font=dict(color="gray", size=13))
+        )
+    )  
+    fig.update_coloraxes(showscale=False)
+    fig.show()
+
+
 def create_top_n_chart_by_playtime(
         df: pd.DataFrame,
         top_n: int,
@@ -536,38 +623,17 @@ def create_top_n_chart_by_playtime(
         if date_range:
             filtered_data = filter_by_date_range(filtered_data, date_range)
 
-        # Prepare ranking data with dual units
+        # Prepare ranking data with minute and hour units
         ranked_data = prepare_ranking_data_with_time_units(filtered_data, search_category, top_n)
 
-        # Get category labels based on the search category
+        # Get category labels based on the search category for the chart
         category_labels = get_category_labels(search_category)
 
-        # Create title for the chart
-        title = f"Top {top_n} {category_labels[0]} by Total Playtime (minutes)"
-        if date_range:
-            title += f" from {date_range[0]} to {date_range[1]}"
+        # Create title and subtitle for the chart
+        titles = get_top_n_playtime_chart_titles(top_n, min_played_seconds, category_labels[0], date_range)
 
         # Generate the chart
-        fig = px.bar(
-            ranked_data,
-            y=search_category,
-            x="total_playtime_minutes",
-            title=title,
-            color="rank",
-            color_continuous_scale=px.colors.sequential.Plasma,
-            labels={
-                search_category: category_labels[1],
-                "total_playtime_minutes": "Total Playtime (minutes)"
-            },
-            hover_data={
-                "total_playtime_minutes": True,
-                "total_playtime_hours": ":.2f",  # Show hours with two decimal places
-                "rank": True,  # Hide rank in hover (optional)
-            }
-        )
-        fig.update_layout(yaxis=dict(autorange="reversed"))  # Reverse bar order for better readability
-        fig.update_coloraxes(showscale=False)
-        fig.show()
+        build_top_n_chart_by_playtime(ranked_data, search_category, titles, category_labels[1])
 
     except ValueError as e:
         logging.error(e)
