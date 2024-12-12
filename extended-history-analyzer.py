@@ -56,7 +56,7 @@ def write_results(output_file: str, data: pd.DataFrame, unique_tracks: Set[str],
 
     logging.info(f"Analysis results written to {output_file}")
 
-def filter_data_by_date_range(df: pd.DataFrame, date_range: Tuple[str, str]) -> pd.DataFrame:
+def filter_by_date_range(df: pd.DataFrame, date_range: Tuple[str, str]) -> pd.DataFrame:
     """
     Filters a DataFrame to include only rows within a specified date range.
     
@@ -76,14 +76,20 @@ def filter_data_by_date_range(df: pd.DataFrame, date_range: Tuple[str, str]) -> 
     start_date, end_date = date_range
     
     # Create a copy to avoid modifying the original DataFrame
-    df = df.copy()
+    copy_df = df.copy()
     
     try:
         # Ensure the 'ts' column is in datetime format
-        df["ts"] = pd.to_datetime(df["ts"])
+        copy_df["ts"] = pd.to_datetime(df["ts"]).dt.tz_localize(None)
+        # Strip ["ts"] coloumn of time because we don't need that here
+        copy_df["ts"] = copy_df["ts"].dt.date
+
+        # Convert strings to dates for proper comparison with copy_df["ts"]
+        start_date = pd.to_datetime(start_date).date()
+        end_date = pd.to_datetime(end_date).date()
 
         # Filter by the date range
-        filtered_df = df[(df["ts"] >= start_date) & (df["ts"] <= end_date)]
+        filtered_df = copy_df[(copy_df["ts"] >= start_date) & (copy_df["ts"] <= end_date)]
 
         if filtered_df.empty:
             raise ValueError(f"No data found in the specified date range: {start_date} to {end_date}.")
@@ -236,7 +242,7 @@ def create_histogram(
         
         # Filter for date range, if provided
         if date_range:
-            filtered_data = filter_data_by_date_range(filtered_data, date_range)
+            filtered_data = filter_by_date_range(filtered_data, date_range)
 
         # Prepare histogram data
         histogram_data = prepare_histogram_data(filtered_data, search_category)
@@ -338,74 +344,106 @@ def generate_stacked_area_chart(
     fig.update_xaxes(dtick="M1", tickformat="%b %Y")  # Format x-axis as 'Month Year'
     fig.show()
 
-def display_top_artists(
-        data: List[Dict[str, Any]], 
-        top_n: int = 10, 
-        min_played_seconds: int = 30, 
-        date_range: Tuple[str, str] = None):
+
+def prepare_ranking_data(df: pd.DataFrame, search_category: str, top_n: int) -> pd.DataFrame:
     """
-    Displays the artists with the highest number of song listens, filtered by playback duration and date range.
+    Prepares data for a ranking chart by grouping and ranking the number of listens.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        search_category (str): The column to group by (e.g., artist, album, or song).
+        top_n (int): Number of top entries to display.
+    
+    Returns:
+        pd.DataFrame: Aggregated and ranked data.
+    """
+    # Count the number of listens by the search category
+    grouped_df = df.groupby(search_category).size().reset_index(name="num_listens")
+    # Sort by the number of listens in descending order
+    grouped_df = grouped_df.sort_values(by="num_listens", ascending=False)
+    # Add ranking column with "min" method to handle ties
+    grouped_df["rank"] = grouped_df["num_listens"].rank(method="min", ascending=False).astype(int)
+    # Return the top n entries
+    return grouped_df[grouped_df["rank"] <= top_n]
+
+
+def get_category_labels(search_category: str):
+    """
+    The dictionary maps the `search_category` to a tuple of labels:
+    - First element: Plural form for the chart title (e.g., "Artists", "Albums", "Songs").
+    - Second element: Singular form for the y-axis label (e.g., "Artist", "Album", "Song").
+    If the `search_category` does not match any known key, it defaults to
+    ("[undefined]", "[undefined]") to handle unexpected or missing categories.
 
     Args:
-        data (List[Dict[str, Any]]): The streaming history data.
-        top_n (int): Number of top artists to display. Default is 10.
-        min_played_seconds (int): Minimum playback time (in seconds) to include an entry. Default is 30.
-        date_range (Tuple[str, str]): A tuple of start and end dates in 'YYYY-MM-DD' format to filter data by date range.
-    """
-    # Prepare data
-    df = pd.DataFrame(data)
-
-    # Ensure the necessary columns exist
-    required_columns = {"master_metadata_album_artist_name", "master_metadata_track_name", "ms_played", "ts"}
-    if not required_columns.issubset(df.columns):
-        logging.error(f"The data is missing required fields: {required_columns - set(df.columns)}")
-        return
-
-    # Filter out entries with playback time less than the specified minimum
-    df = df[df["ms_played"] / 1000 >= min_played_seconds]
-
-    # Convert 'ts' column to datetime and ensure it's timezone-naive
-    df["timestamp"] = pd.to_datetime(df["ts"]).dt.tz_localize(None)
-
-    # Filter by date range if specified
-    if date_range:
-        start_date = pd.to_datetime(date_range[0]).tz_localize(None)
-        end_date = pd.to_datetime(date_range[1]).tz_localize(None)
-        df = df[(df["timestamp"] >= start_date) & (df["timestamp"] <= end_date)]
-
-    # Count the number of listens per artist
-    artist_listens = df.groupby("master_metadata_album_artist_name").size().reset_index(name="num_listens")
-
-    # Sort by number of listens in descending order
-    top_artists = artist_listens.sort_values(by="num_listens", ascending=False).head(top_n)
-
-    # Add ranking column
-    top_artists["rank"] = top_artists["num_listens"].rank(method="min", ascending=False).astype(int)
-
-    # # Display the results
-    # logging.info(f"Top {top_n} Artists by Number of Song Listens (Filtered by {min_played_seconds} seconds):")
-    # logging.info(top_artists.to_string(index=False))
-
-    title = f"Top {top_n} Artists by Number of Listens ({min_played_seconds} seconds or more) "
-    if date_range:
-        title = title + f"from {date_range[0]} to {date_range[1]}"
-    else:
-        title = title + "of All Time"
+        search_category (str): The column representing the ranking category.
     
-    # Optionally visualize the results
+    Returns: Tuple[str, str]: Tuple with labels for the bar chart.
+
+    """
+    category_labels = {
+            "master_metadata_album_artist_name": ("Artists", "Artist"),
+            "master_metadata_album_album_name": ("Albums", "Album"),
+            "master_metadata_track_name": ("Songs", "Song")
+        }.get(search_category, ("[undefined]", "[undefined]"))
+    
+    return category_labels
+
+
+def generate_ranking_chart(
+        ranked_data: pd.DataFrame,
+        search_category: str,
+        title: str,
+        category_label: str,
+    ):
+    """
+    Generates and displays a bar chart for ranked data.
+    
+    Args:
+        ranked_data (pd.DataFrame): The ranked data to plot.
+        search_category (str): The column representing the ranking category.
+        title (str): The title for the bar chart.
+        category_labels (str): Label for the y-axis.
+    """
+    
     fig = px.bar(
-        top_artists,
-        y="master_metadata_album_artist_name",
+        ranked_data,
+        y=search_category,
         x="num_listens",
         title=title,
         color="rank",
         color_continuous_scale=px.colors.sequential.Plasma,
-        labels={"master_metadata_album_artist_name": "Artist", "num_listens": "Number of Listens"},
+        labels={
+            search_category: category_label,
+            "num_listens": "Number of Listens"
+        }
     )
-    # fig.update_xaxes(type="category")  # Ensure the x-axis is treated as categorical
-    fig.update_layout(yaxis=dict(autorange="reversed")) # Uncomment to reverse bars when graph is horizontal
+    fig.update_layout(yaxis=dict(autorange="reversed"))  # Reverse bar order for better readability
     fig.update_coloraxes(showscale=False)
     fig.show()
+
+
+def get_top_n_chart_title(
+        top_n: int, 
+        category_label: str,
+        min_played_seconds: int, 
+        date_range: Tuple[str, str]):
+    """
+    Generates the title for the top n ranking chart
+
+    Args:
+        top_n (int): Number of top entries displayed.
+        category_label (str): Search category type.
+        min_played_seconds (int): Minimum playback time (in seconds) to filter by.
+        date_range (Tuple[str, str]): Optional date range for the chart title.
+    """
+    
+    title = f"Top {top_n} {category_label} by Number of Listens ({min_played_seconds} seconds or more) "
+    if date_range:
+        title = title + f"from {date_range[0]} to {date_range[1]}"
+    else:
+        title = title + "of All Time"
+    return title
 
 
 def create_top_n_chart(
@@ -416,73 +454,35 @@ def create_top_n_chart(
         date_range: Tuple[str, str] = None
     ):
     """
-    Creates a bar chart for ranking top artists, albums, or songs by number of listens.
+    Creates a ranking bar chart for top artists, albums, or songs by number of listens.
     
     Args:
         df (pd.DataFrame): The DataFrame containing the data.
         top_n (int): Number of top entries to display.
-        search_category (str): The column to group by (e.g., 'master_metadata_album_artist_name', 
-                        'master_metadata_album_album_name', or 'master_metadata_track_name').
+        search_category (str): The column to group by (e.g., artist, album, or song).
         min_played_seconds (int): Minimum playback time (in seconds) to filter by.
         date_range (Tuple[str, str]): Optional date range for filtering data.
     """
-    # Validate required columns
-    if search_category not in df.columns or 'ms_played' not in df.columns:
-        raise ValueError(f"The data is missing required fields: '{search_category}' or 'ms_played'")
-    
-    # Filter by playback time
-    filtered_df = filter_by_playback_time(df, min_played_seconds)
-    
-    # Filter by date range if provided
-    if date_range:
-        filtered_df = filter_data_by_date_range(filtered_df, date_range)
-    
-    # Count the number of listens by the search category
-    grouped_df = filtered_df.groupby(search_category).size().reset_index(name="num_listens")
+    try:
+        # Filter data by playback time and date range
+        filtered_data = filter_by_playback_time(df, min_played_seconds)
+        if date_range:
+            filtered_data = filter_by_date_range(filtered_data, date_range)
 
-    # Sort by the number of listens in descending order
-    grouped_df = grouped_df.sort_values(by="num_listens", ascending=False)
+        # Prepare ranking data
+        ranked_data = prepare_ranking_data(filtered_data, search_category, top_n)
 
-    # Add ranking column with "min" method to handle ties
-    grouped_df["rank"] = grouped_df["num_listens"].rank(method="min", ascending=False).astype(int)
+        # Get category labels based on the search category
+        category_labels = get_category_labels(search_category)
 
-    # Select the top entries
-    top_entries = grouped_df[grouped_df["rank"] <= top_n]
+        # Create title for the chart
+        title = get_top_n_chart_title(top_n, category_labels[0], min_played_seconds, date_range)
 
-    # A match-case to define the title and y-axis label based on search category
-    # category_labels[0] is plural
-    # category_labels[1] is singular
-    match search_category:
-        case "master_metadata_album_artist_name":
-            category_labels = ["Artists", "Artist"]
-        case "master_metadata_album_album_name":
-            category_labels = ["Albums", "Album"]
-        case "master_metadata_track_name":
-            category_labels = ["Songs", "Song"]
-        case _:
-            category_labels = ["[undefined]", "[undefined]"]
+        # Generate the chart
+        generate_ranking_chart(ranked_data, search_category, title, category_labels[1])
 
-    
-    # Plot the results
-    title = f"Top {top_n} {category_labels[0]} by Number of Listens"
-    if date_range:
-        title += f" ({date_range[0]} to {date_range[1]})"
-    
-    fig = px.bar(
-        top_entries,
-        y=search_category,
-        x="num_listens",
-        title=title,
-        color="rank",
-        color_continuous_scale=px.colors.sequential.Plasma,
-        labels={
-            search_category: category_labels[1],
-            "num_listens": "Number of Listens"
-        }
-    )
-    fig.update_layout(yaxis=dict(autorange="reversed"))  # Reverse bar order for better readability
-    fig.update_coloraxes(showscale=False)
-    fig.show()
+    except ValueError as e:
+        logging.error(e)
 
 
 # Main execution
@@ -538,13 +538,6 @@ if __name__ == "__main__":
     #     target_artists,
     #     date_range=("2019-12", "2024-11"),
     #     min_played_seconds=30
-    # )
-
-    # display_top_artists(
-    #     data, 
-    #     top_n=5, 
-    #     min_played_seconds=30, 
-    #     date_range=("2024-01-01", "2024-12-31")
     # )
 
     create_top_n_chart(
