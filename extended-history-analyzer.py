@@ -484,14 +484,14 @@ def create_top_n_chart_by_listens(
     except ValueError as e:
         logging.error(e)
 
-def prepare_ranking_data_with_time_units(df: pd.DataFrame, search_category: str, top_n: int) -> pd.DataFrame:
+def prepare_ranking_data_with_time_units(df: pd.DataFrame, top_n: int, search_category: str) -> pd.DataFrame:
     """
     Prepares data for a ranking chart with playtime in both minutes and hours.
     
     Args:
         df (pd.DataFrame): The DataFrame containing the data.
-        search_category (str): The column to group by (e.g., artist, album, or song).
         top_n (int): Number of top entries to display.
+        search_category (str): The column to group by (e.g., artist, album, or song).
     
     Returns:
         pd.DataFrame: Aggregated and ranked data with minutes and hours for hover info.
@@ -624,7 +624,7 @@ def create_top_n_chart_by_playtime(
             filtered_data = filter_by_date_range(filtered_data, date_range)
 
         # Prepare ranking data with minute and hour units
-        ranked_data = prepare_ranking_data_with_time_units(filtered_data, search_category, top_n)
+        ranked_data = prepare_ranking_data_with_time_units(filtered_data, top_n, search_category)
 
         # Get category labels based on the search category for the chart
         category_labels = get_category_labels(search_category)
