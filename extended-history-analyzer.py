@@ -484,6 +484,94 @@ def create_top_n_chart(
     except ValueError as e:
         logging.error(e)
 
+def prepare_ranking_data_with_time_units(df: pd.DataFrame, search_category: str, top_n: int) -> pd.DataFrame:
+    """
+    Prepares data for a ranking chart with playtime in both minutes and hours.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        search_category (str): The column to group by (e.g., artist, album, or song).
+        top_n (int): Number of top entries to display.
+    
+    Returns:
+        pd.DataFrame: Aggregated and ranked data with minutes and hours for hover info.
+    """
+    # Sum playtime by the search category
+    grouped_df = df.groupby(search_category)["ms_played"].sum().reset_index(name="total_playtime_ms")
+    
+    # Calculate minutes and hours
+    grouped_df["total_playtime_minutes"] = grouped_df["total_playtime_ms"] / (1000 * 60)
+    grouped_df["total_playtime_hours"] = grouped_df["total_playtime_minutes"] / 60
+
+    # Sort by total playtime in minutes (chart scale)
+    grouped_df = grouped_df.sort_values(by="total_playtime_minutes", ascending=False)
+    
+    # Add ranking column
+    grouped_df["rank"] = grouped_df["total_playtime_minutes"].rank(method="min", ascending=False).astype(int)
+    
+    # Return the top n entries
+    return grouped_df[grouped_df["rank"] <= top_n]
+
+
+def create_top_n_chart_by_playtime(
+        df: pd.DataFrame,
+        top_n: int,
+        search_category: str,
+        min_played_seconds: int = 0,
+        date_range: Tuple[str, str] = None
+    ):
+    """
+    Creates a ranking bar chart for top artists, albums, or songs with both minutes and hours in hover info.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        top_n (int): Number of top entries to display.
+        search_category (str): The column to group by (e.g., artist, album, or song).
+        min_played_seconds (int): Minimum playback time (in seconds) to filter by.
+        date_range (Tuple[str, str]): Optional date range for filtering data.
+    """
+    try:
+        # Filter data by playback time and date range
+        filtered_data = filter_by_playback_time(df, min_played_seconds)
+        if date_range:
+            filtered_data = filter_by_date_range(filtered_data, date_range)
+
+        # Prepare ranking data with dual units
+        ranked_data = prepare_ranking_data_with_time_units(filtered_data, search_category, top_n)
+
+        # Get category labels based on the search category
+        category_labels = get_category_labels(search_category)
+
+        # Create title for the chart
+        title = f"Top {top_n} {category_labels[0]} by Total Playtime (minutes)"
+        if date_range:
+            title += f" from {date_range[0]} to {date_range[1]}"
+
+        # Generate the chart
+        fig = px.bar(
+            ranked_data,
+            y=search_category,
+            x="total_playtime_minutes",
+            title=title,
+            color="rank",
+            color_continuous_scale=px.colors.sequential.Plasma,
+            labels={
+                search_category: category_labels[1],
+                "total_playtime_minutes": "Total Playtime (minutes)"
+            },
+            hover_data={
+                "total_playtime_minutes": True,
+                "total_playtime_hours": ":.2f",  # Show hours with two decimal places
+                "rank": True,  # Hide rank in hover (optional)
+            }
+        )
+        fig.update_layout(yaxis=dict(autorange="reversed"))  # Reverse bar order for better readability
+        fig.update_coloraxes(showscale=False)
+        fig.show()
+
+    except ValueError as e:
+        logging.error(e)
+
 
 # Main execution
 if __name__ == "__main__":
@@ -540,12 +628,18 @@ if __name__ == "__main__":
     #     min_played_seconds=30
     # )
 
-    create_top_n_chart(
-        df, 
-        top_n=5,
+    # create_top_n_chart(
+    #     df,
+    #     top_n=10,
+    #     search_category="master_metadata_album_album_name",
+    #     min_played_seconds=30,
+    #     date_range=("2024-01-01", "2024-01-01")  # Optional
+    # )
+
+    create_top_n_chart_by_playtime(
+        df,
+        top_n=10,
         search_category="master_metadata_album_album_name",
         min_played_seconds=30,
         date_range=("2024-01-01", "2024-12-31")  # Optional
     )
-
-
