@@ -283,6 +283,7 @@ def build_histogram_by_playtime(
         histogram_data: pd.DataFrame, 
         search_category: str, 
         values: List[str], 
+        min_played_seconds: int,
         date_range: Tuple[str, str] = None
     ):
     """
@@ -292,11 +293,15 @@ def build_histogram_by_playtime(
         histogram_data (pd.DataFrame): Data prepared for the histogram.
         search_category (str): The column to group by (e.g., artist, album, or song).
         values (List[str]): The values to filter by (e.g., a list of artist names, album names, or song names).
+        min_played_seconds (int): Minimum playback time (in seconds) to filter by.
         date_range (Tuple[str, str]): Optional date range for the x-axis.
     """
     title = f"Monthly Total Playtime (minutes) for {', '.join(values)}"
     if date_range:
         title += f" from {date_range[0]} to {date_range[1]}"
+    else:
+        title = title + "of All Time"
+    subtitle = f"(Only considers tracks played for at least {min_played_seconds} seconds.)"
 
     fig = px.bar(
         histogram_data,
@@ -307,7 +312,7 @@ def build_histogram_by_playtime(
         labels={
             "month": "Month",
             "playtime_minutes": "Total Playtime (minutes)",
-            search_category: search_category.split("_")[-1].capitalize()
+            search_category: search_category.split("_")[-2].capitalize()
         },
         hover_data={
             "playtime_hours": ":.2f",
@@ -315,6 +320,14 @@ def build_histogram_by_playtime(
             search_category: True
         }
     )
+    # Add subtitle to chart
+    fig.update_layout(
+        title=dict(
+            subtitle=dict(
+                text=subtitle, 
+                font=dict(color="gray", size=13))
+        )
+    )  
 
     # Format x-axis
     fig.update_xaxes(dtick="M1", tickformat="%b %Y")
@@ -355,7 +368,7 @@ def create_histogram_by_playtime(
         histogram_data = prepare_histogram_data_with_time_units(filtered_data, search_category)
 
         # Build histogram
-        build_histogram_by_playtime(histogram_data, search_category, values, date_range)
+        build_histogram_by_playtime(histogram_data, search_category, values, min_played_seconds, date_range)
 
     except ValueError as e:
         logging.error(e)
