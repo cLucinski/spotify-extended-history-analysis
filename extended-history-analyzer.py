@@ -6,6 +6,11 @@ import pandas as pd
 import plotly.express as px
 from typing import List, Dict, Any, Set, Tuple
 
+# Global configuration dictionary
+global_config = {
+    "aggregate_by_album": True  # Controls if playtime is aggregated by album for 'master_metadata_album_artist_name'. Set to 'True' to enable album-level aggregation.
+}
+
 parser = argparse.ArgumentParser(description='Analyze Spotify streaming history data.')
 parser.add_argument('-v', '--verbose',
                     help='Increase output verbosity',
@@ -269,9 +274,17 @@ def prepare_histogram_data_with_time_units(filtered_data: pd.DataFrame, search_c
     filtered_data["month"] = filtered_data["timestamp"].dt.to_period("M").dt.to_timestamp()
 
     # Aggregate playtime per month for the specified category
-    histogram_data = (
-        filtered_data.groupby(["month", search_category])["ms_played"].sum().reset_index()
-    )
+    # Adjust grouping for album-level aggregation if search_category is "master_metadata_album_artist_name"
+    if search_category == "master_metadata_album_artist_name" and global_config.get("aggregate_by_album", False):
+        histogram_data = (
+            filtered_data.groupby(["month", "master_metadata_album_album_name"])["ms_played"].sum().reset_index()
+        )
+        histogram_data.rename(columns={"master_metadata_album_album_name": "group"}, inplace=True)
+    else:
+        histogram_data = (
+            filtered_data.groupby(["month", search_category])["ms_played"].sum().reset_index()
+        )
+        histogram_data.rename(columns={search_category: "group"}, inplace=True)
 
     # Convert playtime to hours and minutes for better readability in the chart
     histogram_data["playtime_minutes"] = histogram_data["ms_played"] / (1000 * 60)
@@ -307,17 +320,17 @@ def build_histogram_by_playtime(
         histogram_data,
         x="month",
         y="playtime_minutes",
-        color=search_category,
+        color="group",
         title=title,
         labels={
             "month": "Month",
             "playtime_minutes": "Total Playtime (minutes)",
-            search_category: search_category.split("_")[-2].capitalize()
+            "group": "Album" if search_category == "master_metadata_album_artist_name" else search_category.split("_")[-2].capitalize()
         },
         hover_data={
             "playtime_hours": ":.2f",
             "playtime_minutes": True,
-            search_category: True
+            "group": True
         }
     )
     # Add subtitle to chart
@@ -831,10 +844,10 @@ if __name__ == "__main__":
     #     date_range=("2024-01-01", "2024-01-01")  # Optional
     # )
 
-    create_top_n_chart_by_playtime(
-        df,
-        top_n=10,
-        search_category="master_metadata_album_album_name",
-        min_played_seconds=30,
-        date_range=("2024-01-01", "2024-12-31")  # Optional
-    )
+    # create_top_n_chart_by_playtime(
+    #     df,
+    #     top_n=10,
+    #     search_category="master_metadata_album_album_name",
+    #     min_played_seconds=30,
+    #     date_range=("2024-01-01", "2024-12-31")  # Optional
+    # )
