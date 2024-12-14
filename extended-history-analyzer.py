@@ -138,7 +138,7 @@ def filter_by_group(df: pd.DataFrame, search_category: str, values: List[str]) -
     
     return filtered_df
 
-def prepare_histogram_data(df: pd.DataFrame, search_category: str) -> pd.DataFrame:
+def prepare_histogram_data_for_listens(df: pd.DataFrame, search_category: str) -> pd.DataFrame:
     """
     Prepares data for a histogram by grouping listens per month by the specified column.
     
@@ -172,7 +172,7 @@ def prepare_histogram_data(df: pd.DataFrame, search_category: str) -> pd.DataFra
     
     return listens_per_month
 
-def generate_histogram(
+def generate_histogram_by_listens(
         listens_per_month: pd.DataFrame, 
         search_category: str, 
         values: List[str], 
@@ -220,7 +220,7 @@ def generate_histogram(
     fig.update_xaxes(dtick="M1", tickformat="%b %Y")
     fig.show()
 
-def create_histogram(
+def create_histogram_by_listens(
         df: pd.DataFrame, 
         search_category: str, 
         values: List[str], 
@@ -250,10 +250,10 @@ def create_histogram(
             filtered_data = filter_by_date_range(filtered_data, date_range)
 
         # Prepare histogram data
-        histogram_data = prepare_histogram_data(filtered_data, search_category)
+        histogram_data = prepare_histogram_data_for_listens(filtered_data, search_category)
 
         # Generate histogram
-        generate_histogram(histogram_data, search_category, values, min_played_seconds, date_range)
+        generate_histogram_by_listens(histogram_data, search_category, values, min_played_seconds, date_range)
     except ValueError as e:
         logging.error(e)
 
@@ -794,25 +794,25 @@ if __name__ == "__main__":
     # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
     # write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
     
-    create_histogram_by_playtime(
-        df,
-        search_category="master_metadata_album_artist_name",
-        values=["HOYO-MiX", "Yu-Peng Chen", "Robin"],
-        min_played_seconds=30,
-        date_range=("2024-01-01", "2024-12-31")
-    )
-    
-    # # Filter by Artist(s)
-    # create_histogram(
-    #     df, 
-    #     search_category="master_metadata_album_artist_name", 
-    #     values=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
-    #     min_played_seconds=30, 
-    #     date_range=("2024-01-01", "2024-12-31")  # Optional
+    # create_histogram_by_playtime(
+    #     df,
+    #     search_category="master_metadata_album_artist_name",
+    #     values=["HOYO-MiX", "Yu-Peng Chen", "Robin"],
+    #     min_played_seconds=30,
+    #     date_range=("2024-01-01", "2024-12-31")
     # )
     
+    # Filter by Artist(s)
+    create_histogram_by_listens(
+        df, 
+        search_category="master_metadata_album_artist_name", 
+        values=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
+        min_played_seconds=30, 
+        date_range=("2024-01-01", "2024-12-31")  # Optional
+    )
+    
     # # Filter by Album(s)
-    # create_histogram(
+    # create_histogram_by_listens(
     #     df, 
     #     search_category="master_metadata_album_album_name", 
     #     values=["Over the Garden Wall"], 
@@ -821,7 +821,7 @@ if __name__ == "__main__":
     # )
     
     # # Filter by Song(s)
-    # create_histogram(
+    # create_histogram_by_listens(
     #     df, 
     #     search_category="master_metadata_track_name", 
     #     values=["The Highwayman (feat. Jerron 'Blind Boy' Paxton)"], 
