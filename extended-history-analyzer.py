@@ -6,6 +6,11 @@ import pandas as pd
 import plotly.express as px
 from typing import List, Dict, Any, Set, Tuple
 
+# Global configuration dictionary
+global_config = {
+    "aggregate_by_album": True  # Controls if playtime is aggregated by album for 'master_metadata_album_artist_name'. Set to 'True' to enable album-level aggregation.
+}
+
 parser = argparse.ArgumentParser(description='Analyze Spotify streaming history data.')
 parser.add_argument('-v', '--verbose',
                     help='Increase output verbosity',
@@ -133,7 +138,7 @@ def filter_by_group(df: pd.DataFrame, search_category: str, values: List[str]) -
     
     return filtered_df
 
-def prepare_histogram_data(df: pd.DataFrame, search_category: str) -> pd.DataFrame:
+def prepare_histogram_data_for_listens(df: pd.DataFrame, search_category: str) -> pd.DataFrame:
     """
     Prepares data for a histogram by grouping listens per month by the specified column.
     
@@ -151,23 +156,18 @@ def prepare_histogram_data(df: pd.DataFrame, search_category: str) -> pd.DataFra
     df["timestamp"] = pd.to_datetime(df["ts"]).dt.tz_localize(None)
     df["month"] = df["timestamp"].dt.to_period("M").dt.to_timestamp()
 
-    # If searching for an artist, also group by their albums to create an aggregate of that for the chart's bars.
-    # Otherwise, just group by month.
-    match search_category:
-        case "master_metadata_album_artist_name":
-            # If searching for artist, include album data
-            listens_per_month = df.groupby(["month", "master_metadata_album_album_name"]).size().reset_index(name="num_listens")
-        case _:
-            # Searching for album, just group by month
-            listens_per_month = df.groupby(["month"]).size().reset_index(name="num_listens")
-
-    # TODO: verify the following line isn't needed
-    # Group listens per month by the specified column
-    listens_per_month = df.groupby(["month", "master_metadata_album_album_name"]).size().reset_index(name="num_listens")
-    
+    # Adjust grouping for album-level aggregation if search_category is "master_metadata_album_artist_name"
+    if search_category == "master_metadata_album_artist_name" and global_config.get("aggregate_by_album", False):
+        # If searching for artist, include album data
+        listens_per_month = df.groupby(["month", "master_metadata_album_album_name"]).size().reset_index(name="num_listens")
+        listens_per_month.rename(columns={"master_metadata_album_album_name": "group"}, inplace=True)  # Rename column to be easily labelled by bar chart
+    else:
+        # Searching for album, just group by month
+        listens_per_month = df.groupby(["month", search_category]).size().reset_index(name="num_listens")   
+        listens_per_month.rename(columns={search_category: "group"}, inplace=True)  # Rename column to be easily labelled by bar chart
     return listens_per_month
 
-def generate_histogram(
+def build_histogram_by_listens(
         listens_per_month: pd.DataFrame, 
         search_category: str, 
         values: List[str], 
@@ -191,31 +191,25 @@ def generate_histogram(
         title = title + "of All Time"
     
     # If searching for Artist, add colours to group by Albums
-    if search_category == "master_metadata_album_artist_name":
-        fig = px.bar(
-            listens_per_month,
-            x="month",
-            y="num_listens",
-            color="master_metadata_album_album_name",
-            title=title,
-            labels={"month": "Month", "num_listens": "Number of Listens", "master_metadata_album_album_name": "Album"}
-        )
-    # Otherwise, don't.
-    else:
-        fig = px.bar(
-            listens_per_month,
-            x="month",
-            y="num_listens",
-            title=title,
-            labels={"month": "Month", "num_listens": "Number of Listens"}
-        )
+    fig = px.bar(
+        listens_per_month,
+        x="month",
+        y="num_listens",
+        color="group",
+        title=title,
+        labels={
+            "month": "Month", 
+            "num_listens": "Number of Listens", 
+            "group": "Album" if search_category == "master_metadata_album_artist_name" and global_config.get("aggregate_by_album", False) else search_category.split("_")[-2].capitalize()
+        }
+    )
     
     # Format x-axis
     # fig.update_layout(bargap=0.90)  # In case bars are too few and too wide.
     fig.update_xaxes(dtick="M1", tickformat="%b %Y")
     fig.show()
 
-def create_histogram(
+def create_histogram_by_listens(
         df: pd.DataFrame, 
         search_category: str, 
         values: List[str], 
@@ -245,10 +239,139 @@ def create_histogram(
             filtered_data = filter_by_date_range(filtered_data, date_range)
 
         # Prepare histogram data
-        histogram_data = prepare_histogram_data(filtered_data, search_category)
+        histogram_data = prepare_histogram_data_for_listens(filtered_data, search_category)
 
         # Generate histogram
-        generate_histogram(histogram_data, search_category, values, min_played_seconds, date_range)
+        build_histogram_by_listens(histogram_data, search_category, values, min_played_seconds, date_range)
+    except ValueError as e:
+        logging.error(e)
+
+
+def prepare_histogram_data_with_time_units(filtered_data: pd.DataFrame, search_category: str) -> pd.DataFrame:
+    """
+    Prepares data for a histogram by grouping playtime per month and converting playtime to hours and minutes.
+
+    Args:
+        filtered_data (pd.DataFrame): Filtered DataFrame with relevant data.
+        search_category (str): The column to group by (e.g., artist, album, or song).
+
+    Returns:
+        pd.DataFrame: Aggregated DataFrame with monthly playtime in hours and minutes.
+    """
+    # Convert timestamps and group by month
+    filtered_data["timestamp"] = pd.to_datetime(filtered_data["ts"]).dt.tz_localize(None)
+    filtered_data["month"] = filtered_data["timestamp"].dt.to_period("M").dt.to_timestamp()
+
+    # Aggregate playtime per month for the specified category
+    # Adjust grouping for album-level aggregation if search_category is "master_metadata_album_artist_name"
+    if search_category == "master_metadata_album_artist_name" and global_config.get("aggregate_by_album", False):
+        histogram_data = (
+            filtered_data.groupby(["month", "master_metadata_album_album_name"])["ms_played"].sum().reset_index()
+        )
+        histogram_data.rename(columns={"master_metadata_album_album_name": "group"}, inplace=True)  # Rename column to be easily labelled by bar chart
+    else:
+        histogram_data = (
+            filtered_data.groupby(["month", search_category])["ms_played"].sum().reset_index()
+        )
+        histogram_data.rename(columns={search_category: "group"}, inplace=True)  # Rename column to be easily labelled by bar chart
+
+    # Convert playtime to hours and minutes for better readability in the chart
+    histogram_data["playtime_minutes"] = histogram_data["ms_played"] / (1000 * 60)
+    histogram_data["playtime_hours"] = histogram_data["playtime_minutes"] / 60
+
+    return histogram_data
+
+def build_histogram_by_playtime(
+        histogram_data: pd.DataFrame, 
+        search_category: str, 
+        values: List[str], 
+        min_played_seconds: int,
+        date_range: Tuple[str, str] = None
+    ):
+    """
+    Builds and displays a histogram for playtime data grouped by month.
+
+    Args:
+        histogram_data (pd.DataFrame): Data prepared for the histogram.
+        search_category (str): The column to group by (e.g., artist, album, or song).
+        values (List[str]): The values to filter by (e.g., a list of artist names, album names, or song names).
+        min_played_seconds (int): Minimum playback time (in seconds) to filter by.
+        date_range (Tuple[str, str]): Optional date range for the x-axis.
+    """
+    title = f"Monthly Total Playtime (minutes) for {', '.join(values)}"
+    if date_range:
+        title += f" from {date_range[0]} to {date_range[1]}"
+    else:
+        title = title + "of All Time"
+    subtitle = f"(Only considers tracks played for at least {min_played_seconds} seconds.)"
+
+    fig = px.bar(
+        histogram_data,
+        x="month",
+        y="playtime_minutes",
+        color="group",
+        title=title,
+        labels={
+            "month": "Month",
+            "playtime_minutes": "Total Playtime (minutes)",
+            "group": "Album" if (search_category == "master_metadata_album_artist_name" and global_config.get("aggregate_by_album", False)) else search_category.split("_")[-2].capitalize()
+        },
+        hover_data={
+            "playtime_hours": ":.2f",
+            "playtime_minutes": True,
+            "group": True
+        }
+    )
+    # Add subtitle to chart
+    fig.update_layout(
+        title=dict(
+            subtitle=dict(
+                text=subtitle, 
+                font=dict(color="gray", size=13))
+        )
+    )
+
+    # Format x-axis
+    fig.update_xaxes(dtick="M1", tickformat="%b %Y")
+    fig.show()
+
+
+def create_histogram_by_playtime(
+        df: pd.DataFrame, 
+        search_category: str, 
+        values: List[str], 
+        min_played_seconds: int = 0, 
+        date_range: Tuple[str, str] = None
+    ):
+    """
+    Creates a histogram for listening data grouped by artist, album, or song,
+    based on total playtime (ms_played).
+
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        search_category (str): The column to group by (e.g., 'master_metadata_album_artist_name', 
+                        'master_metadata_album_album_name', or 'master_metadata_track_name').
+        values (List[str]): The values to filter by (e.g., a list of artist names, album names, or song names).
+        min_played_seconds (int): Minimum playback time (in seconds) to filter by.
+        date_range (Tuple[str, str]): Optional date range for filtering data.
+    """
+    try:
+        # Filter data by group (artist, album, or song)
+        filtered_data = filter_by_group(df, search_category, values)
+
+        # Filter data by playtime
+        filtered_data = filter_by_playback_time(filtered_data, min_played_seconds)
+        
+        # Filter for date range, if provided
+        if date_range:
+            filtered_data = filter_by_date_range(filtered_data, date_range)
+
+        # Prepare histogram data
+        histogram_data = prepare_histogram_data_with_time_units(filtered_data, search_category)
+
+        # Build histogram
+        build_histogram_by_playtime(histogram_data, search_category, values, min_played_seconds, date_range)
+
     except ValueError as e:
         logging.error(e)
 
@@ -660,32 +783,40 @@ if __name__ == "__main__":
     # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
     # write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
     
-    # # Filter by Artist(s)
-    # create_histogram(
-    #     df, 
-    #     search_category="master_metadata_album_artist_name", 
-    #     values=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
-    #     min_played_seconds=30, 
-    #     date_range=("2024-01-01", "2024-12-31")  # Optional
+    # create_histogram_by_playtime(
+    #     df,
+    #     search_category="master_metadata_album_artist_name",
+    #     values=["HOYO-MiX", "Yu-Peng Chen", "Robin"],
+    #     min_played_seconds=30,
+    #     date_range=("2024-01-01", "2024-12-31")
     # )
     
-    # # Filter by Album(s)
-    # create_histogram(
-    #     df, 
-    #     search_category="master_metadata_album_album_name", 
-    #     values=["Over the Garden Wall"], 
-    #     min_played_seconds=30, 
-    #     # date_range=("2023-01-01", "2023-12-31")  # Optional
-    # )
+    # Filter by Artist(s)
+    create_histogram_by_listens(
+        df, 
+        search_category="master_metadata_album_artist_name", 
+        values=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
+        min_played_seconds=30, 
+        date_range=("2024-01-01", "2024-12-31")  # Optional
+    )
     
-    # # Filter by Song(s)
-    # create_histogram(
-    #     df, 
-    #     search_category="master_metadata_track_name", 
-    #     values=["The Highwayman (feat. Jerron 'Blind Boy' Paxton)"], 
-    #     min_played_seconds=10, 
-    #     # date_range=("2023-01-01", "2023-12-31")  # Optional
-    # )
+    # Filter by Album(s)
+    create_histogram_by_listens(
+        df, 
+        search_category="master_metadata_album_album_name", 
+        values=["Over the Garden Wall", "Currents"], 
+        min_played_seconds=30, 
+        # date_range=("2023-01-01", "2023-12-31")  # Optional
+    )
+    
+    # Filter by Song(s)
+    create_histogram_by_listens(
+        df, 
+        search_category="master_metadata_track_name", 
+        values=["The Highwayman (feat. Jerron 'Blind Boy' Paxton)", "Feather"], 
+        min_played_seconds=10, 
+        # date_range=("2023-01-01", "2023-12-31")  # Optional
+    )
 
     # generate_stacked_area_chart(
     #     data,
@@ -694,7 +825,7 @@ if __name__ == "__main__":
     #     min_played_seconds=30
     # )
 
-    # create_top_n_chart(
+    # create_top_n_chart_by_playtime(
     #     df,
     #     top_n=10,
     #     search_category="master_metadata_album_album_name",
@@ -702,10 +833,10 @@ if __name__ == "__main__":
     #     date_range=("2024-01-01", "2024-01-01")  # Optional
     # )
 
-    create_top_n_chart_by_playtime(
-        df,
-        top_n=10,
-        search_category="master_metadata_album_album_name",
-        min_played_seconds=30,
-        date_range=("2024-01-01", "2024-12-31")  # Optional
-    )
+    # create_top_n_chart_by_playtime(
+    #     df,
+    #     top_n=10,
+    #     search_category="master_metadata_album_album_name",
+    #     min_played_seconds=30,
+    #     date_range=("2024-01-01", "2024-12-31")  # Optional
+    # )
