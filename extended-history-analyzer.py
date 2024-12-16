@@ -658,7 +658,7 @@ if __name__ == "__main__":
     output_file = "spotify_analysis_output.txt"
     target_artists = ["Coldplay"]
 
-    if not os.path.exists(file_pattern):
+    if not glob.glob(file_pattern):
         logging.warning(f'Check that user {args.user} has an entry in the data directory.')
         raise ValueError(f'File {file_pattern} not found.')
 
