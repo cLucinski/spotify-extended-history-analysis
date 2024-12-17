@@ -2,6 +2,7 @@ import argparse
 import glob
 import json
 import logging
+import os
 import pandas as pd
 import plotly.express as px
 from typing import List, Dict, Any, Set, Tuple
@@ -12,6 +13,10 @@ global_config = {
 }
 
 parser = argparse.ArgumentParser(description='Analyze Spotify streaming history data.')
+parser.add_argument('-u', '--user',
+                    help='The user whose data to analyze',
+                    default='chris',
+                    required=False)
 parser.add_argument('-v', '--verbose',
                     help='Increase output verbosity',
                     action='store_true',
@@ -772,9 +777,13 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     # Configuration
-    file_pattern = "data/chris/Streaming_History_Audio_*[0-9].json"  # Path to json files
+    file_pattern = f"data/{args.user}/Streaming_History_Audio_*[0-9].json"  # Path to json files
     output_file = "spotify_analysis_output.txt"
     target_artists = ["Coldplay"]
+
+    if not glob.glob(file_pattern):
+        logging.warning(f'Check that user {args.user} has an entry in the data directory.')
+        raise ValueError(f'File {file_pattern} not found.')
 
     # Execution
     data = load_files(file_pattern)
