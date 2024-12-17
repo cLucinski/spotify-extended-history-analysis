@@ -9,7 +9,8 @@ from typing import List, Dict, Any, Set, Tuple
 
 # Global configuration dictionary
 global_config = {
-    "aggregate_by_album": True  # Controls if playtime is aggregated by album for 'master_metadata_album_artist_name'. Set to 'True' to enable album-level aggregation.
+    "aggregate_by_album": False,  # Controls if playtime is aggregated by album for 'master_metadata_album_artist_name'. Set to 'True' to enable album-level aggregation.
+    "dark_mode": False  # Controls if the chart will have a dark or light background.
 }
 
 parser = argparse.ArgumentParser(description='Analyze Spotify streaming history data.')
@@ -21,6 +22,9 @@ parser.add_argument('-v', '--verbose',
                     help='Increase output verbosity',
                     action='store_true',
                     default=False)
+parser.add_argument('--dark-mode',
+                    help='Enable dark mode for the chart',
+                    action='store_true')  # Adds a boolean flag for dark mode
 
 def load_files(file_pattern: str) -> List[Dict[str, Any]]:
     """Loads and combines JSON data from files matching a pattern."""
@@ -201,6 +205,7 @@ def build_histogram_by_listens(
         x="month",
         y="num_listens",
         color="group",
+        template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
         title=title,
         labels={
             "month": "Month", 
@@ -303,9 +308,9 @@ def build_histogram_by_playtime(
         min_played_seconds (int): Minimum playback time (in seconds) to filter by.
         date_range (Tuple[str, str]): Optional date range for the x-axis.
     """
-    title = f"Monthly Total Playtime (minutes) for {', '.join(values)}"
+    title = f"Monthly Total Playtime (minutes) for {', '.join(values)} "
     if date_range:
-        title += f" from {date_range[0]} to {date_range[1]}"
+        title += f"from {date_range[0]} to {date_range[1]}"
     else:
         title = title + "of All Time"
     subtitle = f"(Only considers tracks played for at least {min_played_seconds} seconds.)"
@@ -315,6 +320,7 @@ def build_histogram_by_playtime(
         x="month",
         y="playtime_minutes",
         color="group",
+        template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
         title=title,
         labels={
             "month": "Month",
@@ -459,6 +465,7 @@ def generate_stacked_area_chart(
         x="month",
         y="cumulative_listens",
         color="master_metadata_album_album_name",
+        template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
         pattern_shape="master_metadata_album_album_name",
         title=f"Monthly Cumulative Listens for {', '.join(artist_names)} (Filtered by {min_played_seconds} seconds)",
         labels={"month": "Month", "cumulative_listens": "Cumulative Listens", "master_metadata_album_album_name": "Album"},
@@ -563,7 +570,8 @@ def build_top_n_chart_by_listens(
         x="num_listens",
         title=title,
         color="rank",
-        color_continuous_scale=px.colors.sequential.Plasma,
+        color_continuous_scale=px.colors.sequential.Plasma_r if global_config.get("dark_mode", False) else px.colors.sequential.Plasma,
+        template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
         labels={
             search_category: category_label,
             "num_listens": "Number of Listens"
@@ -661,9 +669,9 @@ def get_top_n_playtime_chart_titles(
             - `title` (str): The main title for the chart, indicating the category, time range, and playtime metric.
             - `subtitle` (str): A subtitle providing details about the playback threshold.
     """
-    title = f"Top {top_n} {category_label} by Total Playtime (minutes)"
+    title = f"Top {top_n} {category_label} by Total Playtime (minutes) "
     if date_range:
-        title += f" from {date_range[0]} to {date_range[1]}"
+        title += f"from {date_range[0]} to {date_range[1]}"
     else:
         title = title + "of All Time"
         
@@ -705,7 +713,8 @@ def build_top_n_chart_by_playtime(
             x="total_playtime_minutes",
             title=titles[0],
             color="rank",
-            color_continuous_scale=px.colors.sequential.Plasma,
+            color_continuous_scale=px.colors.sequential.Plasma_r if global_config.get("dark_mode", False) else px.colors.sequential.Plasma,
+            template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
             labels={
                 search_category: category_label,
                 "total_playtime_minutes": "Total Playtime (minutes)"
@@ -775,6 +784,9 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.DEBUG, format="%(asctime)s: %(message)s")
     else:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
+    
+    # Update dark mode config
+    global_config['dark_mode'] = args.dark_mode
 
     # Configuration
     file_pattern = f"data/{args.user}/Streaming_History_Audio_*[0-9].json"  # Path to json files
@@ -791,14 +803,6 @@ if __name__ == "__main__":
     
     # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
     # write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
-    
-    # create_histogram_by_playtime(
-    #     df,
-    #     search_category="master_metadata_album_artist_name",
-    #     values=["HOYO-MiX", "Yu-Peng Chen", "Robin"],
-    #     min_played_seconds=30,
-    #     date_range=("2024-01-01", "2024-12-31")
-    # )
     
     # Filter by Artist(s)
     create_histogram_by_listens(
@@ -818,34 +822,42 @@ if __name__ == "__main__":
         # date_range=("2023-01-01", "2023-12-31")  # Optional
     )
     
-    # Filter by Song(s)
-    create_histogram_by_listens(
-        df, 
-        search_category="master_metadata_track_name", 
-        values=["The Highwayman (feat. Jerron 'Blind Boy' Paxton)", "Feather"], 
-        min_played_seconds=10, 
-        # date_range=("2023-01-01", "2023-12-31")  # Optional
+    # # Filter by Song(s)
+    # create_histogram_by_listens(
+    #     df, 
+    #     search_category="master_metadata_track_name", 
+    #     values=["The Highwayman (feat. Jerron 'Blind Boy' Paxton)", "Feather"], 
+    #     min_played_seconds=10, 
+    #     # date_range=("2023-01-01", "2023-12-31")  # Optional
+    # )
+
+    create_histogram_by_playtime(
+        df,
+        search_category="master_metadata_album_artist_name",
+        values=["BTS"],
+        min_played_seconds=30,
+        # date_range=("2024-01-01", "2024-12-31")
     )
 
-    # generate_stacked_area_chart(
-    #     data,
-    #     target_artists,
-    #     date_range=("2019-12", "2024-11"),
-    #     min_played_seconds=30
-    # )
+    generate_stacked_area_chart(
+        data,
+        target_artists,
+        date_range=("2019-12", "2024-11"),
+        min_played_seconds=30
+    )
 
-    # create_top_n_chart_by_playtime(
-    #     df,
-    #     top_n=10,
-    #     search_category="master_metadata_album_album_name",
-    #     min_played_seconds=30,
-    #     date_range=("2024-01-01", "2024-01-01")  # Optional
-    # )
+    create_top_n_chart_by_listens(
+        df,
+        top_n=25,
+        search_category="master_metadata_album_artist_name",
+        min_played_seconds=30,
+        # date_range=("2024-01-01", "2024-11-15")  # Optional
+    )
 
-    # create_top_n_chart_by_playtime(
-    #     df,
-    #     top_n=10,
-    #     search_category="master_metadata_album_album_name",
-    #     min_played_seconds=30,
-    #     date_range=("2024-01-01", "2024-12-31")  # Optional
-    # )
+    create_top_n_chart_by_playtime(
+        df,
+        top_n=25,
+        search_category="master_metadata_album_artist_name",
+        min_played_seconds=30,
+        # date_range=("2024-01-01", "2024-11-15")  # Optional
+    )
