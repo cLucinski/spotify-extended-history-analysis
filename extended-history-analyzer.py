@@ -3,6 +3,7 @@ import glob
 import json
 import logging
 import os
+import numpy as np
 import pandas as pd
 import plotly.express as px
 from typing import List, Dict, Any, Set, Tuple
@@ -811,6 +812,17 @@ def create_heatmap_total_listening_time(df: pd.DataFrame):
     day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     heatmap_data = heatmap_data.reindex(day_order)
 
+    # Identify peak listening times
+    max_value = heatmap_data.max().max()
+    peak_times = np.where(heatmap_data == max_value)
+    annotations = [
+        dict(
+            x=hour, y=day_order[day], text=f"{max_value:.2f} hrs",
+            showarrow=False, font=dict(color="black", size=12)
+        )
+        for day, hour in zip(peak_times[0], peak_times[1])
+    ]
+
     # Create heatmap using Plotly
     fig = px.imshow(
         heatmap_data,
@@ -833,7 +845,8 @@ def create_heatmap_total_listening_time(df: pd.DataFrame):
             bgcolor="white",
             font_size=12,
             font_family="Arial"
-        )
+        ),
+        annotations=annotations
     )
 
     fig.show()
