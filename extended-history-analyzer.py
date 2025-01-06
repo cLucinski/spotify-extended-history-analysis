@@ -783,7 +783,7 @@ def create_top_n_chart_by_playtime(
 def create_heatmap_total_listening_time(df: pd.DataFrame):
     """
     Generates a heatmap of total listening time in hours with days of the week and hourly intervals,
-    and annotates peak listening times. Includes the cumulative total listening time in the title.
+    and annotates the top 5 and bottom 5 time values. Includes the cumulative total listening time in the title.
 
     Args:
         df (pd.DataFrame): Input data containing 'ts' (timestamps) and 'ms_played' columns.
@@ -818,15 +818,21 @@ def create_heatmap_total_listening_time(df: pd.DataFrame):
     day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     heatmap_data = heatmap_data.reindex(day_order)
 
-    # Identify peak listening times
-    max_value = heatmap_data.max().max()
-    peak_times = np.where(heatmap_data == max_value)
+    # Flatten the heatmap data for easier annotation
+    flat_data = heatmap_data.stack().reset_index()
+    flat_data.columns = ['day_of_week', 'hour', 'hours_played']
+
+    # Identify top 5 and bottom 5 time values
+    top_5 = flat_data.nlargest(5, 'hours_played')
+    bottom_5 = flat_data.nsmallest(5, 'hours_played')
+
+    # Create annotations for top 5 and bottom 5 values
     annotations = [
         dict(
-            x=hour, y=day_order[day], text=f"{max_value:.2f} hrs",
-            showarrow=False, font=dict(color="black", size=12)
+            x=row['hour'], y=row['day_of_week'], text=f"{row['hours_played']:.2f}",
+            showarrow=False, font=dict(color="black" if row['hours_played'] in top_5.values else "white", size=12)
         )
-        for day, hour in zip(peak_times[0], peak_times[1])
+        for _, row in pd.concat([top_5, bottom_5]).iterrows()
     ]
 
     # Create heatmap using Plotly
@@ -835,7 +841,7 @@ def create_heatmap_total_listening_time(df: pd.DataFrame):
         labels={'x': 'Hour of Day', 'y': 'Day of Week', 'color': 'Total Listening Time (hours)'},
         color_continuous_scale=px.colors.sequential.Plasma,
         template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
-        title=f"{args.user.capitalize()}'s Total Listening Time Heatmap (Cumulative Total: {cumulative_total:.2f} hrs)"
+        title=f"Total Listening Time Heatmap (Cumulative Total: {cumulative_total:.2f} hrs)"
     )
 
     # Update layout for better readability
