@@ -61,6 +61,9 @@ def write_results(output_file: str, data: pd.DataFrame, unique_tracks: Set[str],
         f"Total unique tracks: {len(unique_tracks)}",
         f"Total unique artists: {len(unique_artists)}",
         f"Total playback time (seconds): {total_playback_time_sec:.2f}",
+        f"Total playback time (minutes): {(total_playback_time_sec / 60):.2f}",
+        f"Total playback time (hours): {(total_playback_time_sec / (60 * 60)):.2f}",
+        f"Total playback time (days): {(total_playback_time_sec / (60 * 60 * 24)):.2f}",
         "\nUnique Tracks:"
     ] + [f"- {track}" for track in sorted(unique_tracks)] + [
         "\nUnique Artists:"
@@ -780,7 +783,7 @@ def create_top_n_chart_by_playtime(
 def create_heatmap_total_listening_time(df: pd.DataFrame):
     """
     Generates a heatmap of total listening time in hours with days of the week and hourly intervals,
-    and annotates peak listening times.
+    and annotates peak listening times. Includes the cumulative total listening time in the title.
 
     Args:
         df (pd.DataFrame): Input data containing 'ts' (timestamps) and 'ms_played' columns.
@@ -808,6 +811,9 @@ def create_heatmap_total_listening_time(df: pd.DataFrame):
         .pivot(index='day_of_week', columns='hour', values='hours_played')
     )
 
+    # Calculate cumulative total listening time
+    cumulative_total = df['hours_played'].sum()
+
     # Ensure proper ordering of days of the week
     day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     heatmap_data = heatmap_data.reindex(day_order)
@@ -828,7 +834,7 @@ def create_heatmap_total_listening_time(df: pd.DataFrame):
         heatmap_data,
         labels={'x': 'Hour of Day', 'y': 'Day of Week', 'color': 'Total Listening Time (hours)'},
         color_continuous_scale='Plasma',
-        title='Total Listening Time Heatmap'
+        title=f'Total Listening Time Heatmap (Cumulative Total: {cumulative_total:.2f} hrs)'
     )
 
     # Update layout for better readability
@@ -866,7 +872,7 @@ if __name__ == "__main__":
 
     # Configuration
     file_pattern = f"data/{args.user}/Streaming_History_Audio_*[0-9].json"  # Path to json files
-    output_file = "spotify_analysis_output.txt"
+    output_file = f"{args.user}_spotify_analysis_output.txt"
     target_artists = ["Coldplay"]
 
     if not glob.glob(file_pattern):
@@ -877,8 +883,8 @@ if __name__ == "__main__":
     data = load_files(file_pattern)
     df = convert_to_dataframe(data)
     
-    # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
-    # write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
+    unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
+    write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
     
     # # Filter by Artist(s)
     # create_histogram_by_listens(
@@ -938,4 +944,4 @@ if __name__ == "__main__":
     #     # date_range=("2024-01-01", "2024-11-15")  # Optional
     # )
 
-    create_heatmap_total_listening_time(df)
+    # create_heatmap_total_listening_time(df)
