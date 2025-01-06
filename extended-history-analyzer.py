@@ -776,6 +776,69 @@ def create_top_n_chart_by_playtime(
         logging.error(e)
 
 
+def create_heatmap_total_listening_time(df: pd.DataFrame):
+    """
+    Generates a heatmap of total listening time in hours with days of the week and hourly intervals,
+    and annotates peak listening times.
+
+    Args:
+        df (pd.DataFrame): Input data containing 'ts' (timestamps) and 'ms_played' columns.
+
+    Raises:
+        ValueError: If required columns are missing.
+    """
+    # Validate required columns
+    if 'ts' not in df.columns or 'ms_played' not in df.columns:
+        raise ValueError("The DataFrame must contain 'ts' and 'ms_played' columns.")
+
+    # Convert timestamps to datetime and extract day and hour
+    df['datetime'] = pd.to_datetime(df['ts']).dt.tz_localize(None)
+    df['day_of_week'] = df['datetime'].dt.day_name()
+    df['hour'] = df['datetime'].dt.hour
+
+    # Convert ms_played to hours
+    df['hours_played'] = df['ms_played'] / (1000 * 60 * 60)
+
+    # Group by day of the week and hour, calculate total hours_played
+    heatmap_data = (
+        df.groupby(['day_of_week', 'hour'])['hours_played']
+        .sum()
+        .reset_index()
+        .pivot(index='day_of_week', columns='hour', values='hours_played')
+    )
+
+    # Ensure proper ordering of days of the week
+    day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    heatmap_data = heatmap_data.reindex(day_order)
+
+    # Create heatmap using Plotly
+    fig = px.imshow(
+        heatmap_data,
+        labels={'x': 'Hour of Day', 'y': 'Day of Week', 'color': 'Total Listening Time (hours)'},
+        color_continuous_scale='Plasma',
+        title='Total Listening Time Heatmap'
+    )
+
+    # Update layout for better readability
+    fig.update_layout(
+        xaxis_title='Time of Day (Hourly Intervals)',
+        yaxis_title='Day of Week',
+        xaxis=dict(
+            tickmode='array',
+            tickvals=list(range(24)),
+            ticktext=[f'{hour}:00' for hour in range(24)]
+        ),
+        coloraxis_colorbar=dict(title="Total Time (hours)"),
+        hoverlabel=dict(
+            bgcolor="white",
+            font_size=12,
+            font_family="Arial"
+        )
+    )
+
+    fig.show()
+
+
 # Main execution
 if __name__ == "__main__":
 
@@ -804,23 +867,23 @@ if __name__ == "__main__":
     # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
     # write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
     
-    # Filter by Artist(s)
-    create_histogram_by_listens(
-        df, 
-        search_category="master_metadata_album_artist_name", 
-        values=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
-        min_played_seconds=30, 
-        date_range=("2024-01-01", "2024-12-31")  # Optional
-    )
+    # # Filter by Artist(s)
+    # create_histogram_by_listens(
+    #     df, 
+    #     search_category="master_metadata_album_artist_name", 
+    #     values=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
+    #     min_played_seconds=30, 
+    #     date_range=("2024-01-01", "2024-12-31")  # Optional
+    # )
     
-    # Filter by Album(s)
-    create_histogram_by_listens(
-        df, 
-        search_category="master_metadata_album_album_name", 
-        values=["Over the Garden Wall", "Currents"], 
-        min_played_seconds=30, 
-        # date_range=("2023-01-01", "2023-12-31")  # Optional
-    )
+    # # Filter by Album(s)
+    # create_histogram_by_listens(
+    #     df, 
+    #     search_category="master_metadata_album_album_name", 
+    #     values=["Over the Garden Wall", "Currents"], 
+    #     min_played_seconds=30, 
+    #     # date_range=("2023-01-01", "2023-12-31")  # Optional
+    # )
     
     # # Filter by Song(s)
     # create_histogram_by_listens(
@@ -831,33 +894,35 @@ if __name__ == "__main__":
     #     # date_range=("2023-01-01", "2023-12-31")  # Optional
     # )
 
-    create_histogram_by_playtime(
-        df,
-        search_category="master_metadata_album_artist_name",
-        values=["BTS"],
-        min_played_seconds=30,
-        # date_range=("2024-01-01", "2024-12-31")
-    )
+    # create_histogram_by_playtime(
+    #     df,
+    #     search_category="master_metadata_album_artist_name",
+    #     values=["BTS"],
+    #     min_played_seconds=30,
+    #     # date_range=("2024-01-01", "2024-12-31")
+    # )
 
-    generate_stacked_area_chart(
-        data,
-        target_artists,
-        date_range=("2019-12", "2024-11"),
-        min_played_seconds=30
-    )
+    # generate_stacked_area_chart(
+    #     data,
+    #     target_artists,
+    #     date_range=("2019-12", "2024-11"),
+    #     min_played_seconds=30
+    # )
 
-    create_top_n_chart_by_listens(
-        df,
-        top_n=25,
-        search_category="master_metadata_album_artist_name",
-        min_played_seconds=30,
-        # date_range=("2024-01-01", "2024-11-15")  # Optional
-    )
+    # create_top_n_chart_by_listens(
+    #     df,
+    #     top_n=25,
+    #     search_category="master_metadata_album_artist_name",
+    #     min_played_seconds=30,
+    #     # date_range=("2024-01-01", "2024-11-15")  # Optional
+    # )
 
-    create_top_n_chart_by_playtime(
-        df,
-        top_n=25,
-        search_category="master_metadata_album_artist_name",
-        min_played_seconds=30,
-        # date_range=("2024-01-01", "2024-11-15")  # Optional
-    )
+    # create_top_n_chart_by_playtime(
+    #     df,
+    #     top_n=25,
+    #     search_category="master_metadata_album_artist_name",
+    #     min_played_seconds=30,
+    #     # date_range=("2024-01-01", "2024-11-15")  # Optional
+    # )
+
+    create_heatmap_total_listening_time(df)
