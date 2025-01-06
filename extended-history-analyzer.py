@@ -833,8 +833,9 @@ def create_heatmap_total_listening_time(df: pd.DataFrame):
     fig = px.imshow(
         heatmap_data,
         labels={'x': 'Hour of Day', 'y': 'Day of Week', 'color': 'Total Listening Time (hours)'},
-        color_continuous_scale='Plasma',
-        title=f'Total Listening Time Heatmap (Cumulative Total: {cumulative_total:.2f} hrs)'
+        color_continuous_scale=px.colors.sequential.Plasma,
+        template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
+        title=f"{args.user.capitalize()}'s Total Listening Time Heatmap (Cumulative Total: {cumulative_total:.2f} hrs)"
     )
 
     # Update layout for better readability
@@ -883,8 +884,8 @@ if __name__ == "__main__":
     data = load_files(file_pattern)
     df = convert_to_dataframe(data)
     
-    unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
-    write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
+    # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
+    # write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
     
     # # Filter by Artist(s)
     # create_histogram_by_listens(
@@ -944,4 +945,4 @@ if __name__ == "__main__":
     #     # date_range=("2024-01-01", "2024-11-15")  # Optional
     # )
 
-    # create_heatmap_total_listening_time(df)
+    create_heatmap_total_listening_time(df)
