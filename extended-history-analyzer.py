@@ -780,30 +780,39 @@ def create_top_n_chart_by_playtime(
         logging.error(e)
 
 
-def create_heatmap_total_listening_time(df: pd.DataFrame):
-    """
-    Generates a heatmap of total listening time in hours with days of the week and hourly intervals,
-    and annotates the top 5 and bottom 5 time values. Includes the cumulative total listening time in the title.
+def validate_dataframe_for_heatmap(df: pd.DataFrame):
+    """Validates if the DataFrame contains the required columns for creating a heatmap."""
+    required_columns = {'ts', 'ms_played'}
+    missing_columns = required_columns - set(df.columns)
+    if missing_columns:
+        raise ValueError(f"The DataFrame is missing required columns: {missing_columns}")
 
+
+def preprocess_heatmap_data(df: pd.DataFrame, date_range: Tuple[str, str] = None) -> pd.DataFrame:
+    """
+    Prepares data for the heatmap by filtering, extracting necessary columns, and aggregating.
+    
     Args:
-        df (pd.DataFrame): Input data containing 'ts' (timestamps) and 'ms_played' columns.
+        df (pd.DataFrame): Input DataFrame containing 'ts' and 'ms_played'.
+        date_range (tuple): Optional date range ('YYYY-MM-DD', 'YYYY-MM-DD') for filtering.
 
-    Raises:
-        ValueError: If required columns are missing.
+    Returns:
+        pd.DataFrame: Aggregated heatmap data.
     """
-    # Validate required columns
-    if 'ts' not in df.columns or 'ms_played' not in df.columns:
-        raise ValueError("The DataFrame must contain 'ts' and 'ms_played' columns.")
-
-    # Convert timestamps to datetime and extract day and hour
     df['datetime'] = pd.to_datetime(df['ts']).dt.tz_localize(None)
+    
+    # Filter by date range
+    if date_range:
+        df = filter_by_date_range(df, date_range)
+        if df.empty:
+            raise ValueError(f"No data available in the date range: {date_range}")
+
+    # Convert ms_played to hours and extract day and hour
+    df['hours_played'] = df['ms_played'] / (1000 * 60 * 60)
     df['day_of_week'] = df['datetime'].dt.day_name()
     df['hour'] = df['datetime'].dt.hour
 
-    # Convert ms_played to hours
-    df['hours_played'] = df['ms_played'] / (1000 * 60 * 60)
-
-    # Group by day of the week and hour, calculate total hours_played
+    # Aggregate data for heatmap
     heatmap_data = (
         df.groupby(['day_of_week', 'hour'])['hours_played']
         .sum()
@@ -811,22 +820,20 @@ def create_heatmap_total_listening_time(df: pd.DataFrame):
         .pivot(index='day_of_week', columns='hour', values='hours_played')
     )
 
-    # Calculate cumulative total listening time
-    cumulative_total = df['hours_played'].sum()
-
-    # Ensure proper ordering of days of the week
+    # Reorder days of the week
     day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     heatmap_data = heatmap_data.reindex(day_order)
 
-    # Flatten the heatmap data for easier annotation
-    flat_data = heatmap_data.stack().reset_index()
-    flat_data.columns = ['day_of_week', 'hour', 'hours_played']
+    return heatmap_data
 
-    # Identify top 5 and bottom 5 time values
+
+
+def prepare_heatmap_annotations_top_btm_5(flat_data):
+    """
+    Helper to prapre annotation data for the heatmap.
+    """
     top_5 = flat_data.nlargest(5, 'hours_played')
     bottom_5 = flat_data.nsmallest(5, 'hours_played')
-
-    # Create annotations for top 5 and bottom 5 values
     annotations = [
         dict(
             x=row['hour'], y=row['day_of_week'], text=f"{row['hours_played']:.2f}",
@@ -834,17 +841,26 @@ def create_heatmap_total_listening_time(df: pd.DataFrame):
         )
         for _, row in pd.concat([top_5, bottom_5]).iterrows()
     ]
+    
+    return annotations
 
-    # Create heatmap using Plotly
+
+def create_heatmap_figure(heatmap_data: pd.DataFrame, annotations: list, title: str):
+    """
+    Creates a heatmap figure using Plotly.
+
+    Args:
+        heatmap_data (pd.DataFrame): Aggregated heatmap data.
+        annotations (list): List of annotations for the heatmap.
+        title (str): Title of the heatmap.
+    """
     fig = px.imshow(
         heatmap_data,
         labels={'x': 'Hour of Day', 'y': 'Day of Week', 'color': 'Total Listening Time (hours)'},
         color_continuous_scale=px.colors.sequential.Plasma,
         template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
-        title=f"Total Listening Time Heatmap (Cumulative Total: {cumulative_total:.2f} hrs)"
+        title=title
     )
-
-    # Update layout for better readability
     fig.update_layout(
         xaxis_title='Time of Day (Hourly Intervals)',
         yaxis_title='Day of Week',
@@ -861,8 +877,54 @@ def create_heatmap_total_listening_time(df: pd.DataFrame):
         ),
         annotations=annotations
     )
-
     fig.show()
+
+
+def print_heatmap_data_summary(flat_data):
+    """
+    Helper to print the data summary of the heatmap.
+    """
+    daily_totals = (
+        flat_data.groupby('day_of_week')['hours_played']
+        .sum()
+        .reset_index()
+        .rename(columns={'hours_played': 'Total Hours Played'})
+    )
+    print("\nSummary Table: Daily Total Listening Times")
+    print(daily_totals.to_string(index=False))
+
+
+def create_heatmap_total_listening_time(df: pd.DataFrame, date_range: tuple = None):
+    """
+    Generates a heatmap of total listening time in hours and annotates the top and bottom 5 values.
+
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        date_range (Tuple[str, str]): Optional date range for filtering data. Format: ('YYYY-MM-DD', 'YYYY-MM-DD').
+    """
+    validate_dataframe_for_heatmap(df)
+    heatmap_data = preprocess_heatmap_data(df, date_range)
+
+    # Flatten heatmap data for annotations
+    flat_data = heatmap_data.stack().reset_index()
+    flat_data.columns = ['day_of_week', 'hour', 'hours_played']
+
+    # Annotate top 5 and bottom 5 values
+    annotations = prepare_heatmap_annotations_top_btm_5(flat_data)
+
+    # Calculate cumulative total hours
+    cumulative_total = flat_data['hours_played'].sum()
+
+    # Generate title
+    title = f"{args.user.capitalize()}'s Total Listening Time Heatmap (Cumulative Total: {cumulative_total:.2f} hrs)"
+    if date_range:
+        title += f"\nDate Range: {date_range[0]} to {date_range[1]}"
+
+    # Create heatmap
+    create_heatmap_figure(heatmap_data, annotations, title)
+
+    # Print daily summary
+    print_heatmap_data_summary(flat_data)
 
 
 # Main execution
@@ -951,4 +1013,4 @@ if __name__ == "__main__":
     #     # date_range=("2024-01-01", "2024-11-15")  # Optional
     # )
 
-    create_heatmap_total_listening_time(df)
+    create_heatmap_total_listening_time(df, date_range=('2024-01-01', '2024-12-31'))
