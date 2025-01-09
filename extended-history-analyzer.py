@@ -845,7 +845,7 @@ def prepare_heatmap_annotations_top_btm_5(flat_data):
     return annotations
 
 
-def create_heatmap_figure(heatmap_data: pd.DataFrame, annotations: list, title: str):
+def create_heatmap_figure(heatmap_data: pd.DataFrame, annotations: list, title: str, subtitle: str):
     """
     Creates a heatmap figure using Plotly.
 
@@ -853,6 +853,7 @@ def create_heatmap_figure(heatmap_data: pd.DataFrame, annotations: list, title: 
         heatmap_data (pd.DataFrame): Aggregated heatmap data.
         annotations (list): List of annotations for the heatmap.
         title (str): Title of the heatmap.
+        subtitle (str): Subtitle to show cumulative hours. 
     """
     fig = px.imshow(
         heatmap_data,
@@ -862,6 +863,11 @@ def create_heatmap_figure(heatmap_data: pd.DataFrame, annotations: list, title: 
         title=title
     )
     fig.update_layout(
+        title=dict(
+            subtitle=dict(
+                text=subtitle, 
+                font=dict(color="gray", size=13))
+        ),
         xaxis_title='Time of Day (Hourly Intervals)',
         yaxis_title='Day of Week',
         xaxis=dict(
@@ -916,12 +922,14 @@ def create_heatmap_total_listening_time(df: pd.DataFrame, date_range: tuple = No
     cumulative_total = flat_data['hours_played'].sum()
 
     # Generate title
-    title = f"{args.user.capitalize()}'s Total Listening Time Heatmap (Cumulative Total: {cumulative_total:.2f} hrs)"
+    title = f"{args.user.capitalize()}'s Total Listening Time Heatmap"
     if date_range:
-        title += f"\nDate Range: {date_range[0]} to {date_range[1]}"
+        title += f"\n({date_range[0]} to {date_range[1]})"
+    
+    subtitle = f"Cumulative Total: {cumulative_total:.2f} hrs"
 
     # Create heatmap
-    create_heatmap_figure(heatmap_data, annotations, title)
+    create_heatmap_figure(heatmap_data, annotations, title, subtitle)
 
     # Print daily summary
     print_heatmap_data_summary(flat_data)
