@@ -3,6 +3,7 @@ import glob
 import json
 import logging
 import os
+import numpy as np
 import pandas as pd
 import plotly.express as px
 from typing import List, Dict, Any, Set, Tuple
@@ -60,6 +61,9 @@ def write_results(output_file: str, data: pd.DataFrame, unique_tracks: Set[str],
         f"Total unique tracks: {len(unique_tracks)}",
         f"Total unique artists: {len(unique_artists)}",
         f"Total playback time (seconds): {total_playback_time_sec:.2f}",
+        f"Total playback time (minutes): {(total_playback_time_sec / 60):.2f}",
+        f"Total playback time (hours): {(total_playback_time_sec / (60 * 60)):.2f}",
+        f"Total playback time (days): {(total_playback_time_sec / (60 * 60 * 24)):.2f}",
         "\nUnique Tracks:"
     ] + [f"- {track}" for track in sorted(unique_tracks)] + [
         "\nUnique Artists:"
@@ -776,6 +780,161 @@ def create_top_n_chart_by_playtime(
         logging.error(e)
 
 
+def validate_dataframe_for_heatmap(df: pd.DataFrame):
+    """Validates if the DataFrame contains the required columns for creating a heatmap."""
+    required_columns = {'ts', 'ms_played'}
+    missing_columns = required_columns - set(df.columns)
+    if missing_columns:
+        raise ValueError(f"The DataFrame is missing required columns: {missing_columns}")
+
+
+def preprocess_heatmap_data(df: pd.DataFrame, date_range: Tuple[str, str] = None) -> pd.DataFrame:
+    """
+    Prepares data for the heatmap by filtering, extracting necessary columns, and aggregating.
+    
+    Args:
+        df (pd.DataFrame): Input DataFrame containing 'ts' and 'ms_played'.
+        date_range (tuple): Optional date range ('YYYY-MM-DD', 'YYYY-MM-DD') for filtering.
+
+    Returns:
+        pd.DataFrame: Aggregated heatmap data.
+    """
+    df['datetime'] = pd.to_datetime(df['ts']).dt.tz_localize(None)
+    
+    # Filter by date range
+    if date_range:
+        df = filter_by_date_range(df, date_range)
+        if df.empty:
+            raise ValueError(f"No data available in the date range: {date_range}")
+
+    # Convert ms_played to hours and extract day and hour
+    df['hours_played'] = df['ms_played'] / (1000 * 60 * 60)
+    df['day_of_week'] = df['datetime'].dt.day_name()
+    df['hour'] = df['datetime'].dt.hour
+
+    # Aggregate data for heatmap
+    heatmap_data = (
+        df.groupby(['day_of_week', 'hour'])['hours_played']
+        .sum()
+        .reset_index()
+        .pivot(index='day_of_week', columns='hour', values='hours_played')
+    )
+
+    # Reorder days of the week
+    day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    heatmap_data = heatmap_data.reindex(day_order)
+
+    return heatmap_data
+
+
+
+def prepare_heatmap_annotations_top_btm_5(flat_data):
+    """
+    Helper to prapre annotation data for the heatmap.
+    """
+    top_5 = flat_data.nlargest(5, 'hours_played')
+    bottom_5 = flat_data.nsmallest(5, 'hours_played')
+    annotations = [
+        dict(
+            x=row['hour'], y=row['day_of_week'], text=f"{row['hours_played']:.2f}",
+            showarrow=False, font=dict(color="black" if row['hours_played'] in top_5.values else "white", size=12)
+        )
+        for _, row in pd.concat([top_5, bottom_5]).iterrows()
+    ]
+    
+    return annotations
+
+
+def create_heatmap_figure(heatmap_data: pd.DataFrame, annotations: list, title: str, subtitle: str):
+    """
+    Creates a heatmap figure using Plotly.
+
+    Args:
+        heatmap_data (pd.DataFrame): Aggregated heatmap data.
+        annotations (list): List of annotations for the heatmap.
+        title (str): Title of the heatmap.
+        subtitle (str): Subtitle to show cumulative hours. 
+    """
+    fig = px.imshow(
+        heatmap_data,
+        labels={'x': 'Hour of Day', 'y': 'Day of Week', 'color': 'Total Listening Time (hours)'},
+        color_continuous_scale=px.colors.sequential.Plasma,
+        template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
+        title=title
+    )
+    fig.update_layout(
+        title=dict(
+            subtitle=dict(
+                text=subtitle, 
+                font=dict(color="gray", size=13))
+        ),
+        xaxis_title='Time of Day (Hourly Intervals)',
+        yaxis_title='Day of Week',
+        xaxis=dict(
+            tickmode='array',
+            tickvals=list(range(24)),
+            ticktext=[f'{hour}:00' for hour in range(24)]
+        ),
+        coloraxis_colorbar=dict(title="Total Time (hours)"),
+        hoverlabel=dict(
+            bgcolor="white",
+            font_size=12,
+            font_family="Arial"
+        ),
+        annotations=annotations
+    )
+    fig.show()
+
+
+def print_heatmap_data_summary(flat_data):
+    """
+    Helper to print the data summary of the heatmap.
+    """
+    daily_totals = (
+        flat_data.groupby('day_of_week')['hours_played']
+        .sum()
+        .reset_index()
+        .rename(columns={'hours_played': 'Total Hours Played'})
+    )
+    print("\nSummary Table: Daily Total Listening Times")
+    print(daily_totals.to_string(index=False))
+
+
+def create_heatmap_total_listening_time(df: pd.DataFrame, date_range: tuple = None):
+    """
+    Generates a heatmap of total listening time in hours and annotates the top and bottom 5 values.
+
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        date_range (Tuple[str, str]): Optional date range for filtering data. Format: ('YYYY-MM-DD', 'YYYY-MM-DD').
+    """
+    validate_dataframe_for_heatmap(df)
+    heatmap_data = preprocess_heatmap_data(df, date_range)
+
+    # Flatten heatmap data for annotations
+    flat_data = heatmap_data.stack().reset_index()
+    flat_data.columns = ['day_of_week', 'hour', 'hours_played']
+
+    # Annotate top 5 and bottom 5 values
+    annotations = prepare_heatmap_annotations_top_btm_5(flat_data)
+
+    # Calculate cumulative total hours
+    cumulative_total = flat_data['hours_played'].sum()
+
+    # Generate title
+    title = f"{args.user.capitalize()}'s Total Listening Time Heatmap"
+    if date_range:
+        title += f"\n({date_range[0]} to {date_range[1]})"
+    
+    subtitle = f"Cumulative Total: {cumulative_total:.2f} hrs"
+
+    # Create heatmap
+    create_heatmap_figure(heatmap_data, annotations, title, subtitle)
+
+    # Print daily summary
+    print_heatmap_data_summary(flat_data)
+
+
 # Main execution
 if __name__ == "__main__":
 
@@ -790,7 +949,7 @@ if __name__ == "__main__":
 
     # Configuration
     file_pattern = f"data/{args.user}/Streaming_History_Audio_*[0-9].json"  # Path to json files
-    output_file = "spotify_analysis_output.txt"
+    output_file = f"{args.user}_spotify_analysis_output.txt"
     target_artists = ["Coldplay"]
 
     if not glob.glob(file_pattern):
@@ -804,23 +963,23 @@ if __name__ == "__main__":
     # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
     # write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
     
-    # Filter by Artist(s)
-    create_histogram_by_listens(
-        df, 
-        search_category="master_metadata_album_artist_name", 
-        values=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
-        min_played_seconds=30, 
-        date_range=("2024-01-01", "2024-12-31")  # Optional
-    )
+    # # Filter by Artist(s)
+    # create_histogram_by_listens(
+    #     df, 
+    #     search_category="master_metadata_album_artist_name", 
+    #     values=["HOYO-MiX", "Yu-Peng Chen", "Robin"], 
+    #     min_played_seconds=30, 
+    #     date_range=("2024-01-01", "2024-12-31")  # Optional
+    # )
     
-    # Filter by Album(s)
-    create_histogram_by_listens(
-        df, 
-        search_category="master_metadata_album_album_name", 
-        values=["Over the Garden Wall", "Currents"], 
-        min_played_seconds=30, 
-        # date_range=("2023-01-01", "2023-12-31")  # Optional
-    )
+    # # Filter by Album(s)
+    # create_histogram_by_listens(
+    #     df, 
+    #     search_category="master_metadata_album_album_name", 
+    #     values=["Over the Garden Wall", "Currents"], 
+    #     min_played_seconds=30, 
+    #     # date_range=("2023-01-01", "2023-12-31")  # Optional
+    # )
     
     # # Filter by Song(s)
     # create_histogram_by_listens(
@@ -831,33 +990,35 @@ if __name__ == "__main__":
     #     # date_range=("2023-01-01", "2023-12-31")  # Optional
     # )
 
-    create_histogram_by_playtime(
-        df,
-        search_category="master_metadata_album_artist_name",
-        values=["BTS"],
-        min_played_seconds=30,
-        # date_range=("2024-01-01", "2024-12-31")
-    )
+    # create_histogram_by_playtime(
+    #     df,
+    #     search_category="master_metadata_album_artist_name",
+    #     values=["BTS"],
+    #     min_played_seconds=30,
+    #     # date_range=("2024-01-01", "2024-12-31")
+    # )
 
-    generate_stacked_area_chart(
-        data,
-        target_artists,
-        date_range=("2019-12", "2024-11"),
-        min_played_seconds=30
-    )
+    # generate_stacked_area_chart(
+    #     data,
+    #     target_artists,
+    #     date_range=("2019-12", "2024-11"),
+    #     min_played_seconds=30
+    # )
 
-    create_top_n_chart_by_listens(
-        df,
-        top_n=25,
-        search_category="master_metadata_album_artist_name",
-        min_played_seconds=30,
-        # date_range=("2024-01-01", "2024-11-15")  # Optional
-    )
+    # create_top_n_chart_by_listens(
+    #     df,
+    #     top_n=25,
+    #     search_category="master_metadata_album_artist_name",
+    #     min_played_seconds=30,
+    #     # date_range=("2024-01-01", "2024-11-15")  # Optional
+    # )
 
-    create_top_n_chart_by_playtime(
-        df,
-        top_n=25,
-        search_category="master_metadata_album_artist_name",
-        min_played_seconds=30,
-        # date_range=("2024-01-01", "2024-11-15")  # Optional
-    )
+    # create_top_n_chart_by_playtime(
+    #     df,
+    #     top_n=25,
+    #     search_category="master_metadata_album_artist_name",
+    #     min_played_seconds=30,
+    #     # date_range=("2024-01-01", "2024-11-15")  # Optional
+    # )
+
+    create_heatmap_total_listening_time(df, date_range=('2024-01-01', '2024-12-31'))
