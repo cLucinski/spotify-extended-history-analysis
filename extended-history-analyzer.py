@@ -391,56 +391,43 @@ def create_histogram_by_playtime(
         logging.error(e)
 
 
-def generate_stacked_area_chart(
-        data: List[Dict[str, Any]], 
-        artist_names: List[str],
-        date_range: Tuple[str, str], 
-        min_played_seconds: int = 0
-        ):
+def filter_data_for_stacked_area_chart(df: pd.DataFrame, artist_names: List[str], min_played_seconds: int) -> pd.DataFrame:
     """
-    Creates an interactive stacked area chart for specific artists' listening data.
-    The x-axis represents dates grouped by month, and the y-axis represents the cumulative number of listens per album.
-    Entries with playback duration shorter than `min_played_seconds` are excluded.
+    Filters the DataFrame for the specified artists and minimum playback time.
     
     Args:
-        data (List[Dict[str, Any]]): The streaming history data.
+        df (pd.DataFrame): The DataFrame containing the data.
         artist_names (List[str]): List of artist names to filter by.
         min_played_seconds (int): Minimum playback time (in seconds) to include an entry.
-        date_range (Tuple[str, str]): A tuple of start and end dates in 'YYYY-MM-DD' format to force the x-axis range.
+    
+    Returns:
+        pd.DataFrame: Filtered DataFrame.
     """
     # Filter data for the specified artists
-    artist_data = [
-        entry for entry in data
-        if entry.get("master_metadata_album_artist_name") in artist_names
-    ]
-    if not artist_data:
-        logging.error(f"No data found for artists: {', '.join(artist_names)}")
-        return
-
-    # Filter out entries with playback time less than the specified minimum
-    artist_data = [
-        entry for entry in artist_data
-        if entry.get("ms_played", 0) / 1000 >= min_played_seconds
-    ]
-    if not artist_data:
-        logging.error(f"No data remaining after filtering by playback duration for artist(s): {', '.join(artist_names)}")
-        return
-
-    # Prepare data for the chart
-    df = pd.DataFrame(artist_data)
-
-    # Keep relevant columns
-    df = df[["ts", 
-            "ms_played", 
-            "master_metadata_track_name", 
-            "master_metadata_album_artist_name", 
-            "master_metadata_album_album_name"]]
+    artist_data = df[df["master_metadata_album_artist_name"].isin(artist_names)]
     
-    # Convert timestamps to datetime and group by month
-    if "ts" not in df.columns:
-        logging.error("Timestamp field 'ts' is missing in data.")
-        return
+    if artist_data.empty:
+        raise ValueError(f"No data found for artists: {', '.join(artist_names)}")
+    
+    # Filter out entries with playback time less than the specified minimum
+    artist_data = artist_data[artist_data["ms_played"] / 1000 >= min_played_seconds]
+    
+    if artist_data.empty:
+        raise ValueError(f"No data remaining after filtering by playback duration for artist(s): {', '.join(artist_names)}")
+    
+    return artist_data
 
+def prepare_stacked_area_chart_data(df: pd.DataFrame, date_range: Tuple[str, str]) -> pd.DataFrame:
+    """
+    Prepares data for the stacked area chart by grouping listens per month and album.
+    
+    Args:
+        df (pd.DataFrame): The filtered DataFrame containing the data.
+        date_range (Tuple[str, str]): A tuple of start and end dates in 'YYYY-MM-DD' format.
+    
+    Returns:
+        pd.DataFrame: Aggregated data for the stacked area chart.
+    """
     # Convert timestamps and group by month
     df["timestamp"] = pd.to_datetime(df["ts"]).dt.tz_localize(None)
     df["month"] = df["timestamp"].dt.to_period("M").dt.to_timestamp()
@@ -463,7 +450,36 @@ def generate_stacked_area_chart(
     # Calculate cumulative listens over time per album
     listens_per_month_album_agg["cumulative_listens"] = listens_per_month_album_agg.groupby("master_metadata_album_album_name")["num_listens"].cumsum()
 
-    # Create and show the stacked area chart
+    return listens_per_month_album_agg
+
+def build_stacked_area_chart(listens_per_month_album_agg: pd.DataFrame, artist_names: List[str], min_played_seconds: int, date_range: Tuple[str, str]):
+    """
+    Builds and displays a stacked area chart for the specified artists.
+    The thickest bars (most listens) are at the bottom, and the legend is reordered to match the stack order.
+    
+    Args:
+        listens_per_month_album_agg (pd.DataFrame): Aggregated data for the stacked area chart.
+        artist_names (List[str]): List of artist names to filter by.
+        min_played_seconds (int): Minimum playback time (in seconds) to include an entry.
+        date_range (Tuple[str, str]): A tuple of start and end dates in 'YYYY-MM-DD' format.
+    """
+    # Sort the data so that the albums with the most cumulative listens are at the bottom
+    # Calculate the total cumulative listens per album
+    total_listens_per_album = listens_per_month_album_agg.groupby("master_metadata_album_album_name")["cumulative_listens"].max().reset_index()
+    total_listens_per_album = total_listens_per_album.sort_values(by="cumulative_listens", ascending=False)  # Sort descending so largest is at the bottom
+    sorted_albums = total_listens_per_album["master_metadata_album_album_name"].tolist()
+
+    # Reorder the DataFrame based on the sorted albums
+    listens_per_month_album_agg["master_metadata_album_album_name"] = pd.Categorical(
+        listens_per_month_album_agg["master_metadata_album_album_name"],
+        categories=sorted_albums,
+        ordered=True
+    )
+    listens_per_month_album_agg = listens_per_month_album_agg.sort_values(["master_metadata_album_album_name", "month"])
+
+    # Build the chart
+    title = f"Monthly Cumulative Listens for {', '.join(artist_names)} (Filtered by {min_played_seconds} seconds)"
+    
     fig = px.area(
         listens_per_month_album_agg,
         x="month",
@@ -471,8 +487,9 @@ def generate_stacked_area_chart(
         color="master_metadata_album_album_name",
         template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
         pattern_shape="master_metadata_album_album_name",
-        title=f"Monthly Cumulative Listens for {', '.join(artist_names)} (Filtered by {min_played_seconds} seconds)",
+        title=title,
         labels={"month": "Month", "cumulative_listens": "Cumulative Listens", "master_metadata_album_album_name": "Album"},
+        category_orders={"master_metadata_album_album_name": sorted_albums}  # Ensure the legend matches the stack order
     )
 
     # Force the x-axis range if date_range is specified
@@ -481,7 +498,42 @@ def generate_stacked_area_chart(
     
     # Format the x-axis for better readability
     fig.update_xaxes(dtick="M1", tickformat="%b %Y")  # Format x-axis as 'Month Year'
+
+    # Ensure the legend is displayed in the same order as the stack
+    fig.update_layout(legend_traceorder="reversed")  # Keep legend in the same order as the stack
+
     fig.show()
+
+
+def generate_stacked_area_chart(
+        df: pd.DataFrame, 
+        artist_names: List[str],
+        date_range: Tuple[str, str], 
+        min_played_seconds: int = 0
+    ):
+    """
+    Creates an interactive stacked area chart for specific artists' listening data.
+    The x-axis represents dates grouped by month, and the y-axis represents the cumulative number of listens per album.
+    Entries with playback duration shorter than `min_played_seconds` are excluded.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        artist_names (List[str]): List of artist names to filter by.
+        min_played_seconds (int): Minimum playback time (in seconds) to include an entry.
+        date_range (Tuple[str, str]): A tuple of start and end dates in 'YYYY-MM-DD' format to force the x-axis range.
+    """
+    try:
+        # Filter data for the specified artists and minimum playback time
+        filtered_data = filter_data_for_stacked_area_chart(df, artist_names, min_played_seconds)
+
+        # Prepare data for the stacked area chart
+        listens_per_month_album_agg = prepare_stacked_area_chart_data(filtered_data, date_range)
+
+        # Build and display the stacked area chart
+        build_stacked_area_chart(listens_per_month_album_agg, artist_names, min_played_seconds, date_range)
+
+    except ValueError as e:
+        logging.error(e)
 
 
 def prepare_ranking_data(df: pd.DataFrame, search_category: str, top_n: int) -> pd.DataFrame:
@@ -998,12 +1050,12 @@ if __name__ == "__main__":
     #     # date_range=("2024-01-01", "2024-12-31")
     # )
 
-    # generate_stacked_area_chart(
-    #     data,
-    #     target_artists,
-    #     date_range=("2019-12", "2024-11"),
-    #     min_played_seconds=30
-    # )
+    generate_stacked_area_chart(
+        df,  # Your DataFrame with Spotify data
+        artist_names=target_artists,  # List of artists to analyze
+        date_range=("2019-12", "2024-11"),  # Date range for the chart
+        min_played_seconds=30  # Minimum playback time to include
+    )
 
     # create_top_n_chart_by_listens(
     #     df,
@@ -1021,4 +1073,4 @@ if __name__ == "__main__":
     #     # date_range=("2024-01-01", "2024-11-15")  # Optional
     # )
 
-    create_heatmap_total_listening_time(df, date_range=('2024-01-01', '2024-12-31'))
+    # create_heatmap_total_listening_time(df, date_range=('2024-01-01', '2024-12-31'))
