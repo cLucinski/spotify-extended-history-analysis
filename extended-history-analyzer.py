@@ -455,6 +455,7 @@ def prepare_stacked_area_chart_data(df: pd.DataFrame, date_range: Tuple[str, str
 def build_stacked_area_chart(listens_per_month_album_agg: pd.DataFrame, artist_names: List[str], min_played_seconds: int, date_range: Tuple[str, str]):
     """
     Builds and displays a stacked area chart for the specified artists.
+    The thickest bars (most listens) are at the bottom, and the legend is reordered to match the stack order.
     
     Args:
         listens_per_month_album_agg (pd.DataFrame): Aggregated data for the stacked area chart.
@@ -462,6 +463,21 @@ def build_stacked_area_chart(listens_per_month_album_agg: pd.DataFrame, artist_n
         min_played_seconds (int): Minimum playback time (in seconds) to include an entry.
         date_range (Tuple[str, str]): A tuple of start and end dates in 'YYYY-MM-DD' format.
     """
+    # Sort the data so that the albums with the most cumulative listens are at the bottom
+    # Calculate the total cumulative listens per album
+    total_listens_per_album = listens_per_month_album_agg.groupby("master_metadata_album_album_name")["cumulative_listens"].max().reset_index()
+    total_listens_per_album = total_listens_per_album.sort_values(by="cumulative_listens", ascending=False)  # Sort descending so largest is at the bottom
+    sorted_albums = total_listens_per_album["master_metadata_album_album_name"].tolist()
+
+    # Reorder the DataFrame based on the sorted albums
+    listens_per_month_album_agg["master_metadata_album_album_name"] = pd.Categorical(
+        listens_per_month_album_agg["master_metadata_album_album_name"],
+        categories=sorted_albums,
+        ordered=True
+    )
+    listens_per_month_album_agg = listens_per_month_album_agg.sort_values(["master_metadata_album_album_name", "month"])
+
+    # Build the chart
     title = f"Monthly Cumulative Listens for {', '.join(artist_names)} (Filtered by {min_played_seconds} seconds)"
     
     fig = px.area(
@@ -473,6 +489,7 @@ def build_stacked_area_chart(listens_per_month_album_agg: pd.DataFrame, artist_n
         pattern_shape="master_metadata_album_album_name",
         title=title,
         labels={"month": "Month", "cumulative_listens": "Cumulative Listens", "master_metadata_album_album_name": "Album"},
+        category_orders={"master_metadata_album_album_name": sorted_albums}  # Ensure the legend matches the stack order
     )
 
     # Force the x-axis range if date_range is specified
@@ -481,7 +498,12 @@ def build_stacked_area_chart(listens_per_month_album_agg: pd.DataFrame, artist_n
     
     # Format the x-axis for better readability
     fig.update_xaxes(dtick="M1", tickformat="%b %Y")  # Format x-axis as 'Month Year'
+
+    # Ensure the legend is displayed in the same order as the stack
+    fig.update_layout(legend_traceorder="reversed")  # Keep legend in the same order as the stack
+
     fig.show()
+
 
 def generate_stacked_area_chart(
         df: pd.DataFrame, 
