@@ -284,14 +284,14 @@ def prepare_histogram_data_with_time_units(filtered_data: pd.DataFrame, search_c
     # Adjust grouping for album-level aggregation if search_category is "master_metadata_album_artist_name"
     if search_category == "master_metadata_album_artist_name" and global_config.get("aggregate_by_album", False):
         histogram_data = (
-            filtered_data.groupby(["month", "master_metadata_album_album_name"])["ms_played"].sum().reset_index()
+            filtered_data.groupby(["month", "master_metadata_album_album_name", "user"])["ms_played"].sum().reset_index()
         )
-        histogram_data.rename(columns={"master_metadata_album_album_name": "group"}, inplace=True)  # Rename column to be easily labelled by bar chart
+        histogram_data.rename(columns={"master_metadata_album_album_name": "group"}, inplace=True)
     else:
         histogram_data = (
-            filtered_data.groupby(["month", search_category])["ms_played"].sum().reset_index()
+            filtered_data.groupby(["month", search_category, "user"])["ms_played"].sum().reset_index()
         )
-        histogram_data.rename(columns={search_category: "group"}, inplace=True)  # Rename column to be easily labelled by bar chart
+        histogram_data.rename(columns={search_category: "group"}, inplace=True)
 
     # Convert playtime to hours and minutes for better readability in the chart
     histogram_data["playtime_minutes"] = histogram_data["ms_played"] / (1000 * 60)
@@ -1070,6 +1070,66 @@ def create_comparison_histogram_by_listens(
         logging.error(e)
 
 
+def create_comparison_histogram_by_playtime(
+        df: pd.DataFrame, 
+        search_category: str, 
+        values: List[str], 
+        min_played_seconds: int = 0, 
+        date_range: Tuple[str, str] = None
+    ):
+    """
+    Creates a histogram comparing the total playtime between users for a specific artist, album, or song.
+    
+    Args:
+        df (pd.DataFrame): Combined DataFrame with data from multiple users.
+        search_category (str): The column to group by (e.g., artist, album, or song).
+        values (List[str]): The values to filter by (e.g., a list of artist names, album names, or song names).
+        min_played_seconds (int): Minimum playback time (in seconds) to filter by.
+        date_range (Tuple[str, str]): Optional date range for filtering data.
+    """
+    try:
+        # Filter data by group (artist, album, or song)
+        filtered_data = filter_by_group(df, search_category, values)
+
+        # Filter data by playtime
+        filtered_data = filter_by_playback_time(filtered_data, min_played_seconds)
+        
+        # Filter for date range, if provided
+        if date_range:
+            filtered_data = filter_by_date_range(filtered_data, date_range)
+
+        # Prepare histogram data
+        histogram_data = prepare_histogram_data_with_time_units(filtered_data, search_category)
+
+        # Capitalize user names in the legend
+        histogram_data['user'] = histogram_data['user'].str.capitalize()
+
+        # Generate histogram with user differentiation
+        fig = px.bar(
+            histogram_data,
+            x="month",
+            y="playtime_minutes",
+            color="user",  # Differentiate by user
+            barmode="group",  # Group bars by user
+            template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
+            title=f"Monthly Total Playtime (minutes) for {', '.join(values)}",
+            labels={
+                "month": "Month", 
+                "playtime_minutes": "Total Playtime (minutes)", 
+                "user": "User"
+            },
+            hover_data={
+                "playtime_hours": ":.2f",  # Show hours in hover data
+                "playtime_minutes": True,
+                "user": True
+            }
+        )
+        fig.update_xaxes(dtick="M1", tickformat="%b %Y")
+        fig.show()
+    except ValueError as e:
+        logging.error(e)
+
+
 # Main execution
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -1102,7 +1162,15 @@ if __name__ == "__main__":
             search_category="master_metadata_album_artist_name", 
             values=["Coldplay"], 
             min_played_seconds=30, 
-            # date_range=("2024-01-01", "2024-12-31")
+            date_range=("2024-01-01", "2024-12-31")
+        )
+
+        create_comparison_histogram_by_playtime(
+            combined_df, 
+            search_category="master_metadata_album_artist_name", 
+            values=["Coldplay"], 
+            min_played_seconds=30, 
+            date_range=("2024-01-01", "2024-12-31")
         )
 
         # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(combined_df)
