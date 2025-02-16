@@ -15,9 +15,10 @@ global_config = {
 }
 
 parser = argparse.ArgumentParser(description='Analyze Spotify streaming history data.')
-parser.add_argument('-u', '--user',
-                    help='The user whose data to analyze',
-                    default='chris',
+parser.add_argument('-u', '--users', 
+                    nargs='+', 
+                    help='The users whose data to analyze', 
+                    default=['chris'], 
                     required=False)
 parser.add_argument('-v', '--verbose',
                     help='Increase output verbosity',
@@ -27,13 +28,15 @@ parser.add_argument('--dark-mode',
                     help='Enable dark mode for the chart',
                     action='store_true')  # Adds a boolean flag for dark mode
 
-def load_files(file_pattern: str) -> List[Dict[str, Any]]:
-    """Loads and combines JSON data from files matching a pattern."""
+def load_files(file_pattern: str, user: str) -> List[Dict[str, Any]]:
+    """Loads and combines JSON data from files matching a pattern and adds a 'user' column."""
     combined_data = []
     file_list = sorted(glob.glob(file_pattern))
     for file_path in file_list:
         with open(file_path, "r", encoding="utf-8") as file:
             data = json.load(file)
+            for entry in data:
+                entry['user'] = user  # Add a 'user' column
             combined_data.extend(data)
     return combined_data
 
@@ -172,12 +175,13 @@ def prepare_histogram_data_for_listens(df: pd.DataFrame, search_category: str) -
     # Adjust grouping for album-level aggregation if search_category is "master_metadata_album_artist_name"
     if search_category == "master_metadata_album_artist_name" and global_config.get("aggregate_by_album", False):
         # If searching for artist, include album data
-        listens_per_month = df.groupby(["month", "master_metadata_album_album_name"]).size().reset_index(name="num_listens")
+        listens_per_month = df.groupby(["month", "master_metadata_album_album_name", "user"]).size().reset_index(name="num_listens")
         listens_per_month.rename(columns={"master_metadata_album_album_name": "group"}, inplace=True)  # Rename column to be easily labelled by bar chart
     else:
-        # Searching for album, just group by month
-        listens_per_month = df.groupby(["month", search_category]).size().reset_index(name="num_listens")   
+        # Searching for album or song, just group by month and user
+        listens_per_month = df.groupby(["month", search_category, "user"]).size().reset_index(name="num_listens")   
         listens_per_month.rename(columns={search_category: "group"}, inplace=True)  # Rename column to be easily labelled by bar chart
+
     return listens_per_month
 
 def build_histogram_by_listens(
@@ -987,9 +991,87 @@ def create_heatmap_total_listening_time(df: pd.DataFrame, date_range: tuple = No
     print_heatmap_data_summary(flat_data)
 
 
+def load_and_combine_user_data(users: List[str]) -> pd.DataFrame:
+    """Loads and combines JSON data for multiple users into a single DataFrame."""
+    combined_data = []
+    for user in users:
+        file_pattern = f"data/{user}/Streaming_History_Audio_*[0-9].json"
+        file_list = sorted(glob.glob(file_pattern))
+        if not file_list:
+            logging.warning(f'Check that user {user} has an entry in the data directory.')
+            raise ValueError(f'No files found for user {user}.')
+        
+        for file_path in file_list:
+            with open(file_path, "r", encoding="utf-8") as file:
+                data = json.load(file)
+                for entry in data:
+                    entry['user'] = user  # Add a 'user' column to distinguish between users
+                combined_data.extend(data)
+    return pd.DataFrame(combined_data)
+
+
+def create_comparison_histogram_by_listens(
+        df: pd.DataFrame, 
+        search_category: str, 
+        values: List[str], 
+        min_played_seconds: int = 0, 
+        date_range: Tuple[str, str] = None
+    ):
+    """
+    Creates a histogram comparing the number of listens between users for a specific artist, album, or song.
+    
+    Args:
+        df (pd.DataFrame): Combined DataFrame with data from multiple users.
+        search_category (str): The column to group by (e.g., artist, album, or song).
+        values (List[str]): The values to filter by (e.g., a list of artist names, album names, or song names).
+        min_played_seconds (int): Minimum playback time (in seconds) to filter by.
+        date_range (Tuple[str, str]): Optional date range for filtering data.
+    """
+    try:
+        # Filter data by group (artist, album, or song)
+        filtered_data = filter_by_group(df, search_category, values)
+
+        # Filter data by playtime
+        filtered_data = filter_by_playback_time(filtered_data, min_played_seconds)
+        
+        # Filter for date range, if provided
+        if date_range:
+            filtered_data = filter_by_date_range(filtered_data, date_range)
+
+        # Prepare histogram data
+        histogram_data = prepare_histogram_data_for_listens(filtered_data, search_category)
+
+        # Generate histogram with user differentiation
+        fig = px.bar(
+            histogram_data,
+            x="month",
+            y="num_listens",
+            color="user",  # Differentiate by user
+            barmode="group",  # Group bars by user
+            # line_shape='spline',
+            template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
+            title=f"Monthly Number of Listens ({min_played_seconds} seconds or more) for {', '.join(values)}",
+            labels={
+                "month": "Month", 
+                "num_listens": "Number of Listens", 
+                "user": "User"
+            },
+            hover_data={
+                "group": True if len(values) > 1 else False
+            },
+        )
+
+        # for trace in fig.data:
+        #     trace.name = trace.name.capitalize()  # Capitalize the legend label
+
+        fig.update_xaxes(dtick="M1", tickformat="%b %Y")
+        fig.show()
+    except ValueError as e:
+        logging.error(e)
+
+
 # Main execution
 if __name__ == "__main__":
-
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG, format="%(asctime)s: %(message)s")
@@ -998,19 +1080,33 @@ if __name__ == "__main__":
     
     # Update dark mode config
     global_config['dark_mode'] = args.dark_mode
-
-    # Configuration
-    file_pattern = f"data/{args.user}/Streaming_History_Audio_*[0-9].json"  # Path to json files
-    output_file = f"{args.user}_spotify_analysis_output.txt"
+    output_file = f"output/{args.users}_spotify_analysis_output.txt"
     target_artists = ["Coldplay"]
 
-    if not glob.glob(file_pattern):
-        logging.warning(f'Check that user {args.user} has an entry in the data directory.')
-        raise ValueError(f'File {file_pattern} not found.')
+    # Load data for the specified users
+    if len(args.users) == 1:
+        # Single-user mode: Use existing functionality but add a 'user' column
+        file_pattern = f"data/{args.users[0]}/Streaming_History_Audio_*[0-9].json"
+        if not glob.glob(file_pattern):
+            logging.warning(f'Check that user {args.users[0]} has an entry in the data directory.')
+            raise ValueError(f'File {file_pattern} not found.')
+        
+        data = load_files(file_pattern, args.users[0])
+        df = convert_to_dataframe(data)
+    else:
+        # Multi-user mode: Load and combine data for comparison
+        combined_df = load_and_combine_user_data(args.users)
 
-    # Execution
-    data = load_files(file_pattern)
-    df = convert_to_dataframe(data)
+        create_comparison_histogram_by_listens(
+            combined_df,
+            search_category="master_metadata_album_artist_name", 
+            values=["Coldplay"], 
+            min_played_seconds=30, 
+            # date_range=("2024-01-01", "2024-12-31")
+        )
+
+        # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(combined_df)
+        # write_results(output_file, combined_df, unique_tracks, unique_artists, total_playback_time_sec)
     
     # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
     # write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
@@ -1050,12 +1146,12 @@ if __name__ == "__main__":
     #     # date_range=("2024-01-01", "2024-12-31")
     # )
 
-    generate_stacked_area_chart(
-        df,  # Your DataFrame with Spotify data
-        artist_names=target_artists,  # List of artists to analyze
-        date_range=("2019-12", "2024-11"),  # Date range for the chart
-        min_played_seconds=30  # Minimum playback time to include
-    )
+    # generate_stacked_area_chart(
+    #     df,  # Your DataFrame with Spotify data
+    #     artist_names=["HOYO-MiX", "Yu-Peng Chen"],  # List of artists to analyze
+    #     date_range=("2021-11", "2024-11"),  # Date range for the chart
+    #     min_played_seconds=30  # Minimum playback time to include
+    # )
 
     # create_top_n_chart_by_listens(
     #     df,
