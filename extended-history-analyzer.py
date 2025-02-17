@@ -978,7 +978,7 @@ def create_heatmap_total_listening_time(df: pd.DataFrame, date_range: tuple = No
     cumulative_total = flat_data['hours_played'].sum()
 
     # Generate title
-    title = f"{args.user.capitalize()}'s Total Listening Time Heatmap"
+    title = f"{args.users[0].capitalize()}'s Total Listening Time Heatmap"
     if date_range:
         title += f"\n({date_range[0]} to {date_range[1]})"
     
