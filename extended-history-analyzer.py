@@ -1130,6 +1130,98 @@ def create_comparison_histogram_by_playtime(
         logging.error(e)
 
 
+def prepare_total_monthly_listening_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepares data for a histogram of total monthly listening time.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        
+    Returns:
+        pd.DataFrame: Aggregated data with total listening time per month per user.
+    """
+    # Convert timestamps and group by month
+    df["timestamp"] = pd.to_datetime(df["ts"]).dt.tz_localize(None)
+    df["month"] = df["timestamp"].dt.to_period("M").dt.to_timestamp()
+
+    # Aggregate total listening time per month per user
+    total_listening_per_month = (
+        df.groupby(["month", "user"])["ms_played"]
+        .sum()
+        .reset_index()
+    )
+
+    # Convert milliseconds to hours for better readability
+    total_listening_per_month["hours_played"] = total_listening_per_month["ms_played"] / (1000 * 60 * 60)
+
+    return total_listening_per_month
+
+
+def build_total_monthly_listening_histogram(
+        total_listening_per_month: pd.DataFrame, 
+        date_range: Tuple[str, str] = None
+    ):
+    """
+    Builds and displays a histogram for total monthly listening time.
+    
+    Args:
+        total_listening_per_month (pd.DataFrame): Aggregated data with total listening time per month per user.
+        date_range (Tuple[str, str]): Optional date range for the x-axis.
+    """
+    title = "Monthly Total Listening Time"
+    if date_range:
+        title += f" from {date_range[0]} to {date_range[1]}"
+    
+    fig = px.bar(
+        total_listening_per_month,
+        x="month",
+        y="hours_played",
+        color="user",  # Differentiate by user
+        # barmode="group",  # Group bars by user
+        # line_shape='spline',
+        # markers=True,
+        template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
+        title=title,
+        labels={
+            "month": "Month",
+            "hours_played": "Total Listening Time (hours)",
+            "user": "User"
+        },
+        hover_data={
+            "hours_played": ":.3f"
+        }
+    )
+    
+    # Format x-axis
+    fig.update_xaxes(dtick="M1", tickformat="%b %Y")
+    fig.show()
+
+
+def create_total_monthly_listening_histogram(
+        df: pd.DataFrame, 
+        date_range: Tuple[str, str] = None
+    ):
+    """
+    Creates a histogram for total monthly listening time.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        date_range (Tuple[str, str]): Optional date range for filtering data.
+    """
+    try:
+        # Filter for date range, if provided
+        if date_range:
+            df = filter_by_date_range(df, date_range)
+
+        # Prepare histogram data
+        total_listening_per_month = prepare_total_monthly_listening_data(df)
+
+        # Generate histogram
+        build_total_monthly_listening_histogram(total_listening_per_month, date_range)
+    except ValueError as e:
+        logging.error(e)
+
+
 # Main execution
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -1155,26 +1247,14 @@ if __name__ == "__main__":
         df = convert_to_dataframe(data)
     else:
         # Multi-user mode: Load and combine data for comparison
-        combined_df = load_and_combine_user_data(args.users)
+        df = load_and_combine_user_data(args.users)
 
-        create_comparison_histogram_by_listens(
-            combined_df,
-            search_category="master_metadata_album_artist_name", 
-            values=["Coldplay"], 
-            min_played_seconds=30, 
-            date_range=("2024-01-01", "2024-12-31")
-        )
+    # Create total monthly listening histogram
+    create_total_monthly_listening_histogram(
+        df,
+        date_range=("2023-12-01", "2024-11-30")  # Optional date range
+    )
 
-        create_comparison_histogram_by_playtime(
-            combined_df, 
-            search_category="master_metadata_album_artist_name", 
-            values=["Coldplay"], 
-            min_played_seconds=30, 
-            date_range=("2024-01-01", "2024-12-31")
-        )
-
-        # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(combined_df)
-        # write_results(output_file, combined_df, unique_tracks, unique_artists, total_playback_time_sec)
     
     # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
     # write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
