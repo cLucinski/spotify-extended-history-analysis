@@ -1159,15 +1159,32 @@ def prepare_total_monthly_listening_data(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_total_monthly_listening_histogram(
         total_listening_per_month: pd.DataFrame, 
-        date_range: Tuple[str, str] = None
+        date_range: Tuple[str, str] = None,
+        user_order: List[str] = None  # Add user_order parameter
     ):
     """
     Builds and displays a histogram for total monthly listening time.
+    The lines are added in the order of users specified in `user_order`.
     
     Args:
         total_listening_per_month (pd.DataFrame): Aggregated data with total listening time per month per user.
         date_range (Tuple[str, str]): Optional date range for the x-axis.
+        user_order (List[str]): List of users in the desired order for the lines.
     """
+        # Ensure the user_order is provided
+    if user_order is None:
+        user_order = total_listening_per_month["user"].unique().tolist()
+    
+    # Sort the DataFrame by user_order
+    total_listening_per_month["user"] = pd.Categorical(
+        total_listening_per_month["user"],
+        categories=user_order,
+        ordered=True
+    )
+
+    # Keep rows chronological within each user
+    total_listening_per_month = total_listening_per_month.sort_values(by=['user', 'month'])
+
     title = "Monthly Total Listening Time"
     if date_range:
         title += f" from {date_range[0]} to {date_range[1]}"
@@ -1199,7 +1216,8 @@ def build_total_monthly_listening_histogram(
 
 def create_total_monthly_listening_histogram(
         df: pd.DataFrame, 
-        date_range: Tuple[str, str] = None
+        date_range: Tuple[str, str] = None,
+        user_order: List[str] = None  # Add user_order parameter
     ):
     """
     Creates a histogram for total monthly listening time.
@@ -1207,6 +1225,7 @@ def create_total_monthly_listening_histogram(
     Args:
         df (pd.DataFrame): The DataFrame containing the data.
         date_range (Tuple[str, str]): Optional date range for filtering data.
+        user_order (List[str]): List of users in the desired order for the lines.
     """
     try:
         # Filter for date range, if provided
@@ -1217,7 +1236,7 @@ def create_total_monthly_listening_histogram(
         total_listening_per_month = prepare_total_monthly_listening_data(df)
 
         # Generate histogram
-        build_total_monthly_listening_histogram(total_listening_per_month, date_range)
+        build_total_monthly_listening_histogram(total_listening_per_month, date_range, user_order)
     except ValueError as e:
         logging.error(e)
 
@@ -1262,17 +1281,34 @@ def prepare_cumulative_listening_data(df: pd.DataFrame, group_by: str = "day") -
 def build_cumulative_listening_line_chart(
         cumulative_listening_data: pd.DataFrame, 
         group_by: str = "day",
-        date_range: Tuple[str, str] = None
+        date_range: Tuple[str, str] = None,
+        user_order: List[str] = None  # Add user_order parameter
     ):
     """
     Builds and displays a line chart for cumulative listening history.
+    The lines are added in the order of users specified in `user_order`.
     
     Args:
         cumulative_listening_data (pd.DataFrame): Aggregated data with cumulative listening time.
         group_by (str): The time unit used for grouping. Options: "day" or "month".
         date_range (Tuple[str, str]): Optional date range for the x-axis.
+        user_order (List[str]): List of users in the desired order for the lines.
     """
-    title = f"Cumulative Listening History (Updated {'Daily' if group_by == 'day' else 'Monthly'})"
+    # Ensure the user_order is provided
+    if user_order is None:
+        user_order = cumulative_listening_data["user"].unique().tolist()
+    
+    # Sort the DataFrame by user_order
+    cumulative_listening_data["user"] = pd.Categorical(
+        cumulative_listening_data["user"],
+        categories=user_order,
+        ordered=True
+    )
+
+    # Keep rows chronological within each user
+    cumulative_listening_data = cumulative_listening_data.sort_values(by=['user', 'time_unit'])
+
+    title = f"Cumulative Listening History ({'Daily' if group_by == 'day' else 'Monthly'} Intervals)"
     if date_range:
         title += f" from {date_range[0]} to {date_range[1]}"
     
@@ -1298,7 +1334,7 @@ def build_cumulative_listening_line_chart(
     # # Format x-axis based on the time unit
     if group_by == "day":
         fig.update_xaxes(tickformat="%d %b %Y")
-    if group_by == "month":
+    elif group_by == "month":
         fig.update_xaxes(tickformat="%b %Y")  # Monthly ticks # dtick="M1",
     
     fig.update_layout(hovermode="x unified")
@@ -1309,7 +1345,8 @@ def build_cumulative_listening_line_chart(
 def create_cumulative_listening_line_chart(
         df: pd.DataFrame, 
         group_by: str = "day",
-        date_range: Tuple[str, str] = None
+        date_range: Tuple[str, str] = None,
+        user_order: List[str] = None  # Add user_order parameter
     ):
     """
     Creates a line chart for cumulative listening history.
@@ -1318,6 +1355,7 @@ def create_cumulative_listening_line_chart(
         df (pd.DataFrame): The DataFrame containing the data.
         group_by (str): The time unit to group by. Options: "day" or "month".
         date_range (Tuple[str, str]): Optional date range for filtering data.
+        user_order (List[str]): List of users in the desired order for the lines.
     """
     try:
         # Filter for date range, if provided
@@ -1327,8 +1365,13 @@ def create_cumulative_listening_line_chart(
         # Prepare cumulative listening data
         cumulative_listening_data = prepare_cumulative_listening_data(df, group_by)
 
-        # Generate line chart
-        build_cumulative_listening_line_chart(cumulative_listening_data, group_by, date_range)
+        # Generate line chart with user_order
+        build_cumulative_listening_line_chart(
+            cumulative_listening_data, 
+            group_by, 
+            date_range, 
+            user_order
+        )
     except ValueError as e:
         logging.error(e)
 
@@ -1362,17 +1405,18 @@ if __name__ == "__main__":
         # Multi-user mode: Load and combine data for comparison
         df = load_and_combine_user_data(args.users)
 
-    # # Create total monthly listening histogram
-    # create_total_monthly_listening_histogram(
-    #     df,
-    #     date_range=("2023-12-01", "2024-11-30")  # Optional date range
-    # )
+    # Create total monthly listening histogram
+    create_total_monthly_listening_histogram(
+        df,
+        date_range=("2023-12-01", "2024-11-30"),  # Optional date range
+        user_order=args.users
+    )
 
-    # Create cumulative listening line chart
     create_cumulative_listening_line_chart(
         df,
         group_by="day",  # Options: "day" or "month"
-        # date_range=("2022-11-01", "2024-11-30")  # Optional date range
+        date_range=("2024-01-01", "2024-12-31"),  # Optional date range
+        user_order=args.users  # Pass user_order
     )
 
     
