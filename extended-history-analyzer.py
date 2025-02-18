@@ -1130,6 +1130,211 @@ def create_comparison_histogram_by_playtime(
         logging.error(e)
 
 
+def prepare_total_monthly_listening_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepares data for a histogram of total monthly listening time.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        
+    Returns:
+        pd.DataFrame: Aggregated data with total listening time per month per user.
+    """
+    # Convert timestamps and group by month
+    df["timestamp"] = pd.to_datetime(df["ts"]).dt.tz_localize(None)
+    df["month"] = df["timestamp"].dt.to_period("M").dt.to_timestamp()
+
+    # Aggregate total listening time per month per user
+    total_listening_per_month = (
+        df.groupby(["month", "user"])["ms_played"]
+        .sum()
+        .reset_index()
+    )
+
+    # Convert milliseconds to hours for better readability
+    total_listening_per_month["hours_played"] = total_listening_per_month["ms_played"] / (1000 * 60 * 60)
+
+    return total_listening_per_month
+
+
+def build_total_monthly_listening_histogram(
+        total_listening_per_month: pd.DataFrame, 
+        date_range: Tuple[str, str] = None
+    ):
+    """
+    Builds and displays a histogram for total monthly listening time.
+    
+    Args:
+        total_listening_per_month (pd.DataFrame): Aggregated data with total listening time per month per user.
+        date_range (Tuple[str, str]): Optional date range for the x-axis.
+    """
+    title = "Monthly Total Listening Time"
+    if date_range:
+        title += f" from {date_range[0]} to {date_range[1]}"
+    
+    fig = px.bar(
+        total_listening_per_month,
+        x="month",
+        y="hours_played",
+        color="user",  # Differentiate by user
+        barmode="group",  # Group bars by user
+        # line_shape='spline',
+        # markers=True,
+        template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
+        title=title,
+        labels={
+            "month": "Month",
+            "hours_played": "Total Listening Time (hours)",
+            "user": "User"
+        },
+        hover_data={
+            "hours_played": ":.3f"
+        }
+    )
+    
+    # Format x-axis
+    fig.update_xaxes(dtick="M1", tickformat="%b %Y")
+    fig.show()
+
+
+def create_total_monthly_listening_histogram(
+        df: pd.DataFrame, 
+        date_range: Tuple[str, str] = None
+    ):
+    """
+    Creates a histogram for total monthly listening time.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        date_range (Tuple[str, str]): Optional date range for filtering data.
+    """
+    try:
+        # Filter for date range, if provided
+        if date_range:
+            df = filter_by_date_range(df, date_range)
+
+        # Prepare histogram data
+        total_listening_per_month = prepare_total_monthly_listening_data(df)
+
+        # Generate histogram
+        build_total_monthly_listening_histogram(total_listening_per_month, date_range)
+    except ValueError as e:
+        logging.error(e)
+
+
+def prepare_cumulative_listening_data(df: pd.DataFrame, group_by: str = "day") -> pd.DataFrame:
+    """
+    Prepares data for a cumulative listening history line chart.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        group_by (str): The time unit to group by. Options: "day" or "month".
+        
+    Returns:
+        pd.DataFrame: Aggregated data with cumulative listening time over time.
+    """
+    # Convert timestamps and group by the specified time unit
+    df["timestamp"] = pd.to_datetime(df["ts"]).dt.tz_localize(None)
+    
+    if group_by == "day":
+        df["time_unit"] = df["timestamp"].dt.date  # Group by day
+    elif group_by == "month":
+        df["time_unit"] = df["timestamp"].dt.to_period("M").dt.to_timestamp()  # Group by month
+    else:
+        raise ValueError("Invalid group_by value. Use 'day' or 'month'.")
+
+    # Aggregate total listening time per time unit per user
+    listening_per_time_unit = (
+        df.groupby(["time_unit", "user"])["ms_played"]
+        .sum()
+        .reset_index()
+    )
+
+    # Convert milliseconds to hours for better readability
+    listening_per_time_unit["hours_played"] = listening_per_time_unit["ms_played"] / (1000 * 60 * 60)
+
+    # Calculate cumulative listening time per user
+    listening_per_time_unit["cumulative_hours"] = listening_per_time_unit.groupby("user")["hours_played"].cumsum()
+
+    return listening_per_time_unit
+
+
+def build_cumulative_listening_line_chart(
+        cumulative_listening_data: pd.DataFrame, 
+        group_by: str = "day",
+        date_range: Tuple[str, str] = None
+    ):
+    """
+    Builds and displays a line chart for cumulative listening history.
+    
+    Args:
+        cumulative_listening_data (pd.DataFrame): Aggregated data with cumulative listening time.
+        group_by (str): The time unit used for grouping. Options: "day" or "month".
+        date_range (Tuple[str, str]): Optional date range for the x-axis.
+    """
+    title = f"Cumulative Listening History (Updated {'Daily' if group_by == 'day' else 'Monthly'})"
+    if date_range:
+        title += f" from {date_range[0]} to {date_range[1]}"
+    
+    fig = px.line(
+        cumulative_listening_data,
+        x="time_unit",
+        y="cumulative_hours",
+        color="user",  # Differentiate by user
+        template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
+        title=title,
+        labels={
+            "time_unit": "Date",
+            "cumulative_hours": "Cumulative Listening Time (hours)",
+            "user": "User",
+            "hours_played": "Hours added"
+        },
+        hover_data={
+            "cumulative_hours": ":.3f",
+            "hours_played": ":.3f"
+        }
+    )
+    
+    # # Format x-axis based on the time unit
+    if group_by == "day":
+        fig.update_xaxes(tickformat="%d %b %Y")
+    if group_by == "month":
+        fig.update_xaxes(tickformat="%b %Y")  # Monthly ticks # dtick="M1",
+    
+    fig.update_layout(hovermode="x unified")
+    # fig.update_xaxes(rangeslider_visible=True)
+    fig.show()
+
+
+def create_cumulative_listening_line_chart(
+        df: pd.DataFrame, 
+        group_by: str = "day",
+        date_range: Tuple[str, str] = None
+    ):
+    """
+    Creates a line chart for cumulative listening history.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        group_by (str): The time unit to group by. Options: "day" or "month".
+        date_range (Tuple[str, str]): Optional date range for filtering data.
+    """
+    try:
+        # Filter for date range, if provided
+        if date_range:
+            df = filter_by_date_range(df, date_range)
+
+        # Prepare cumulative listening data
+        cumulative_listening_data = prepare_cumulative_listening_data(df, group_by)
+
+        # Generate line chart
+        build_cumulative_listening_line_chart(cumulative_listening_data, group_by, date_range)
+    except ValueError as e:
+        logging.error(e)
+
+# TODO: allow hovermode to match order of lines
+# TODO: ensure lines are added to chart in order of args 
+
 # Main execution
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -1155,26 +1360,21 @@ if __name__ == "__main__":
         df = convert_to_dataframe(data)
     else:
         # Multi-user mode: Load and combine data for comparison
-        combined_df = load_and_combine_user_data(args.users)
+        df = load_and_combine_user_data(args.users)
 
-        create_comparison_histogram_by_listens(
-            combined_df,
-            search_category="master_metadata_album_artist_name", 
-            values=["Coldplay"], 
-            min_played_seconds=30, 
-            date_range=("2024-01-01", "2024-12-31")
-        )
+    # # Create total monthly listening histogram
+    # create_total_monthly_listening_histogram(
+    #     df,
+    #     date_range=("2023-12-01", "2024-11-30")  # Optional date range
+    # )
 
-        create_comparison_histogram_by_playtime(
-            combined_df, 
-            search_category="master_metadata_album_artist_name", 
-            values=["Coldplay"], 
-            min_played_seconds=30, 
-            date_range=("2024-01-01", "2024-12-31")
-        )
+    # Create cumulative listening line chart
+    create_cumulative_listening_line_chart(
+        df,
+        group_by="day",  # Options: "day" or "month"
+        # date_range=("2022-11-01", "2024-11-30")  # Optional date range
+    )
 
-        # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(combined_df)
-        # write_results(output_file, combined_df, unique_tracks, unique_artists, total_playback_time_sec)
     
     # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
     # write_results(output_file, df, unique_tracks, unique_artists, total_playback_time_sec)
