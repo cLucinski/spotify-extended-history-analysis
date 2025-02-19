@@ -1407,10 +1407,163 @@ def create_cumulative_listening_line_chart(
         logging.error(e)
 
 # TODO: allow hovermode to match order of lines
-# TODO: ensure lines are added to chart in order of args 
+
+
+def prepare_cumulative_data_for_category(
+        df: pd.DataFrame, 
+        search_category: str, 
+        values: List[str], 
+        group_by: str = "day"
+    ) -> pd.DataFrame:
+    """
+    Prepares data for a cumulative listening history line chart for specific albums, artists, or tracks.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        search_category (str): The column to filter by (e.g., artist, album, or song).
+        values (List[str]): The values to filter by (e.g., a list of artist names, album names, or song names).
+        group_by (str): The time unit to group by. Options: "day" or "month".
+        
+    Returns:
+        pd.DataFrame: Aggregated data with cumulative listening time over time for the specified category.
+    """
+    # Filter data by the specified category (artist, album, or song)
+    filtered_data = filter_by_group(df, search_category, values).copy()  # Explicitly create a copy
+    
+    # Convert timestamps and group by the specified time unit
+    filtered_data.loc[:, "timestamp"] = pd.to_datetime(filtered_data["ts"]).dt.tz_localize(None)
+    
+    if group_by == "day":
+        filtered_data.loc[:, "time_unit"] = filtered_data["timestamp"].dt.date  # Group by day
+    elif group_by == "month":
+        filtered_data.loc[:, "time_unit"] = filtered_data["timestamp"].dt.to_period("M").dt.to_timestamp()  # Group by month
+    else:
+        raise ValueError("Invalid group_by value. Use 'day' or 'month'.")
+
+    # Aggregate total listening time per time unit per user
+    listening_per_time_unit = (
+        filtered_data.groupby(["time_unit", "user", search_category])["ms_played"]
+        .sum()
+        .reset_index()
+    )
+
+    # Convert milliseconds to hours for better readability
+    listening_per_time_unit["hours_played"] = listening_per_time_unit["ms_played"] / (1000 * 60 * 60)
+
+    # Calculate cumulative listening time per user and category
+    listening_per_time_unit["cumulative_hours"] = listening_per_time_unit.groupby(["user", search_category])["hours_played"].cumsum()
+
+    return listening_per_time_unit
+
+
+def build_cumulative_chart_for_category(
+        cumulative_data: pd.DataFrame, 
+        search_category: str, 
+        group_by: str = "day",
+        date_range: Tuple[str, str] = None,
+        user_order: List[str] = None
+    ):
+    """
+    Builds and displays a line chart for cumulative listening history for specific albums, artists, or tracks.
+    
+    Args:
+        cumulative_data (pd.DataFrame): Aggregated data with cumulative listening time.
+        search_category (str): The column representing the category (e.g., artist, album, or song).
+        group_by (str): The time unit used for grouping. Options: "day" or "month".
+        date_range (Tuple[str, str]): Optional date range for the x-axis.
+        user_order (List[str]): List of users in the desired order for the lines.
+    """
+    # Ensure the user_order is provided
+    if user_order is None:
+        user_order = cumulative_data["user"].unique().tolist()
+    
+    # Sort the DataFrame by user_order
+    cumulative_data["user"] = pd.Categorical(
+        cumulative_data["user"],
+        categories=user_order,
+        ordered=True
+    )
+
+    # Keep rows chronological within each user
+    cumulative_data = cumulative_data.sort_values(by=['user', 'time_unit'])
+
+    title = f"Cumulative Listening History for {', '.join(cumulative_data[search_category].unique())} ({'Daily' if group_by == 'day' else 'Monthly'} Intervals)"
+    if date_range:
+        title += f" from {date_range[0]} to {date_range[1]}"
+    
+    fig = px.line(
+        cumulative_data,
+        x="time_unit",
+        y="cumulative_hours",
+        color=search_category,  # Differentiate by user
+        line_dash="user",  # Differentiate by category (artist, album, or song)
+        template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
+        title=title,
+        labels={
+            "time_unit": "Date",
+            "cumulative_hours": "Cumulative Listening Time (hours)",
+            "user": "User",
+            search_category: search_category.split("_")[-1].capitalize()
+        },
+        hover_data={
+            "cumulative_hours": ":.3f",
+            "hours_played": ":.3f"
+        }
+    )
+    
+    # Format x-axis based on the time unit
+    if group_by == "day":
+        fig.update_xaxes(tickformat="%d %b %Y")
+    elif group_by == "month":
+        fig.update_xaxes(tickformat="%b %Y")  # Monthly ticks
+    
+    fig.update_layout(hovermode="x unified")
+    fig.show()
+
+
+def create_cumulative_chart_for_category(
+        df: pd.DataFrame, 
+        search_category: str, 
+        values: List[str], 
+        group_by: str = "day",
+        date_range: Tuple[str, str] = None,
+        user_order: List[str] = None
+    ):
+    """
+    Creates a line chart for cumulative listening history for specific albums, artists, or tracks.
+    
+    Args:
+        df (pd.DataFrame): The DataFrame containing the data.
+        search_category (str): The column to filter by (e.g., artist, album, or song).
+        values (List[str]): The values to filter by (e.g., a list of artist names, album names, or song names).
+        group_by (str): The time unit to group by. Options: "day" or "month".
+        date_range (Tuple[str, str]): Optional date range for filtering data.
+        user_order (List[str]): List of users in the desired order for the lines.
+    """
+    try:
+        # Filter for date range, if provided
+        if date_range:
+            df = filter_by_date_range(df, date_range)
+
+        # Prepare cumulative listening data for the specified category
+        cumulative_data = prepare_cumulative_data_for_category(df, search_category, values, group_by)
+
+        # Generate line chart with user_order
+        build_cumulative_chart_for_category(
+            cumulative_data, 
+            search_category, 
+            group_by, 
+            date_range, 
+            user_order
+        )
+    except ValueError as e:
+        logging.error(e)
+
 
 # Main execution
 if __name__ == "__main__":
+    # pd.options.mode.copy_on_write = True
+    
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG, format="%(asctime)s: %(message)s")
@@ -1435,24 +1588,34 @@ if __name__ == "__main__":
     else:
         # Multi-user mode: Load and combine data for comparison
         df = load_and_combine_user_data(args.users)
-    
-    create_comparison_histogram_by_listens(
-        df,
-        search_category="master_metadata_album_artist_name", 
-        values=["Coldplay"], 
-        min_played_seconds=30, 
-        # date_range=("2024-01-01", "2024-12-31"),
-        user_order=args.users
-    )
 
-    create_comparison_histogram_by_playtime(
-        df, 
-        search_category="master_metadata_album_artist_name", 
-        values=["Coldplay"], 
-        min_played_seconds=30, 
-        # date_range=("2024-01-01", "2024-12-31"),
+    
+    create_cumulative_chart_for_category(
+        df,
+        search_category="master_metadata_album_artist_name",
+        values=["HOYO-MiX", "Yu-Peng Chen", "Chappell Roan", "Billie Eilish", "Yoko Shimomura", "Tame Impala", "Taylor Swift", "Stray Kids", "Gang of Youths", "Coldplay"],
+        group_by="day",
+        date_range=("2024-01-01", "2024-12-31"),
         user_order=args.users
     )
+    
+    # create_comparison_histogram_by_listens(
+    #     df,
+    #     search_category="master_metadata_album_artist_name", 
+    #     values=["Coldplay"], 
+    #     min_played_seconds=30, 
+    #     # date_range=("2024-01-01", "2024-12-31"),
+    #     user_order=args.users
+    # )
+
+    # create_comparison_histogram_by_playtime(
+    #     df, 
+    #     search_category="master_metadata_album_artist_name", 
+    #     values=["Coldplay"], 
+    #     min_played_seconds=30, 
+    #     # date_range=("2024-01-01", "2024-12-31"),
+    #     user_order=args.users
+    # )
 
     # # Create total monthly listening histogram
     # create_total_monthly_listening_histogram(
@@ -1527,7 +1690,7 @@ if __name__ == "__main__":
     #     top_n=25,
     #     search_category="master_metadata_album_artist_name",
     #     min_played_seconds=30,
-    #     # date_range=("2024-01-01", "2024-11-15")  # Optional
+    #     date_range=("2024-01-01", "2024-12-31")  # Optional
     # )
 
     # create_heatmap_total_listening_time(df, date_range=('2024-01-01', '2024-12-31'))
