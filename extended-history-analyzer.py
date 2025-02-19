@@ -1015,7 +1015,8 @@ def create_comparison_histogram_by_listens(
         search_category: str, 
         values: List[str], 
         min_played_seconds: int = 0, 
-        date_range: Tuple[str, str] = None
+        date_range: Tuple[str, str] = None,
+        user_order: List[str] = None
     ):
     """
     Creates a histogram comparing the number of listens between users for a specific artist, album, or song.
@@ -1026,6 +1027,7 @@ def create_comparison_histogram_by_listens(
         values (List[str]): The values to filter by (e.g., a list of artist names, album names, or song names).
         min_played_seconds (int): Minimum playback time (in seconds) to filter by.
         date_range (Tuple[str, str]): Optional date range for filtering data.
+        user_order (List[str]): List of users in the desired order for the lines.
     """
     try:
         # Filter data by group (artist, album, or song)
@@ -1040,6 +1042,23 @@ def create_comparison_histogram_by_listens(
 
         # Prepare histogram data
         histogram_data = prepare_histogram_data_for_listens(filtered_data, search_category)
+
+        # Ensure the user_order is provided
+        if user_order is None:
+            user_order = histogram_data["user"].unique().tolist()
+        
+        # Sort the DataFrame by user_order
+        histogram_data["user"] = pd.Categorical(
+            histogram_data["user"],
+            categories=user_order,
+            ordered=True
+        )
+
+        # Keep rows chronological within each user
+        histogram_data = histogram_data.sort_values(by=['user', 'month'])
+
+        # # Capitalize user names in the legend
+        # histogram_data['user'] = histogram_data['user'].str.capitalize()
 
         # Generate histogram with user differentiation
         fig = px.bar(
@@ -1060,10 +1079,6 @@ def create_comparison_histogram_by_listens(
                 "group": True if len(values) > 1 else False
             },
         )
-
-        # for trace in fig.data:
-        #     trace.name = trace.name.capitalize()  # Capitalize the legend label
-
         fig.update_xaxes(dtick="M1", tickformat="%b %Y")
         fig.show()
     except ValueError as e:
@@ -1075,7 +1090,8 @@ def create_comparison_histogram_by_playtime(
         search_category: str, 
         values: List[str], 
         min_played_seconds: int = 0, 
-        date_range: Tuple[str, str] = None
+        date_range: Tuple[str, str] = None,
+        user_order: List[str] = None
     ):
     """
     Creates a histogram comparing the total playtime between users for a specific artist, album, or song.
@@ -1086,6 +1102,7 @@ def create_comparison_histogram_by_playtime(
         values (List[str]): The values to filter by (e.g., a list of artist names, album names, or song names).
         min_played_seconds (int): Minimum playback time (in seconds) to filter by.
         date_range (Tuple[str, str]): Optional date range for filtering data.
+        user_order (List[str]): List of users in the desired order for the lines.
     """
     try:
         # Filter data by group (artist, album, or song)
@@ -1101,8 +1118,22 @@ def create_comparison_histogram_by_playtime(
         # Prepare histogram data
         histogram_data = prepare_histogram_data_with_time_units(filtered_data, search_category)
 
-        # Capitalize user names in the legend
-        histogram_data['user'] = histogram_data['user'].str.capitalize()
+        # Ensure the user_order is provided
+        if user_order is None:
+            user_order = histogram_data["user"].unique().tolist()
+        
+        # Sort the DataFrame by user_order
+        histogram_data["user"] = pd.Categorical(
+            histogram_data["user"],
+            categories=user_order,
+            ordered=True
+        )
+
+        # Keep rows chronological within each user
+        histogram_data = histogram_data.sort_values(by=['user', 'month'])
+
+        # # Capitalize user names in the legend
+        # histogram_data['user'] = histogram_data['user'].str.capitalize()
 
         # Generate histogram with user differentiation
         fig = px.bar(
@@ -1171,7 +1202,7 @@ def build_total_monthly_listening_histogram(
         date_range (Tuple[str, str]): Optional date range for the x-axis.
         user_order (List[str]): List of users in the desired order for the lines.
     """
-        # Ensure the user_order is provided
+    # Ensure the user_order is provided
     if user_order is None:
         user_order = total_listening_per_month["user"].unique().tolist()
     
@@ -1217,7 +1248,7 @@ def build_total_monthly_listening_histogram(
 def create_total_monthly_listening_histogram(
         df: pd.DataFrame, 
         date_range: Tuple[str, str] = None,
-        user_order: List[str] = None  # Add user_order parameter
+        user_order: List[str] = None
     ):
     """
     Creates a histogram for total monthly listening time.
@@ -1404,20 +1435,38 @@ if __name__ == "__main__":
     else:
         # Multi-user mode: Load and combine data for comparison
         df = load_and_combine_user_data(args.users)
-
-    # Create total monthly listening histogram
-    create_total_monthly_listening_histogram(
+    
+    create_comparison_histogram_by_listens(
         df,
-        date_range=("2023-12-01", "2024-11-30"),  # Optional date range
+        search_category="master_metadata_album_artist_name", 
+        values=["Coldplay"], 
+        min_played_seconds=30, 
+        # date_range=("2024-01-01", "2024-12-31"),
         user_order=args.users
     )
 
-    create_cumulative_listening_line_chart(
-        df,
-        group_by="day",  # Options: "day" or "month"
-        date_range=("2024-01-01", "2024-12-31"),  # Optional date range
-        user_order=args.users  # Pass user_order
+    create_comparison_histogram_by_playtime(
+        df, 
+        search_category="master_metadata_album_artist_name", 
+        values=["Coldplay"], 
+        min_played_seconds=30, 
+        # date_range=("2024-01-01", "2024-12-31"),
+        user_order=args.users
     )
+
+    # # Create total monthly listening histogram
+    # create_total_monthly_listening_histogram(
+    #     df,
+    #     date_range=("2023-12-01", "2024-11-30"),  # Optional date range
+    #     user_order=args.users
+    # )
+
+    # create_cumulative_listening_line_chart(
+    #     df,
+    #     group_by="day",  # Options: "day" or "month"
+    #     # date_range=("2024-01-01", "2024-12-31"),  # Optional date range
+    #     user_order=args.users  # Pass user_order
+    # )
 
     
     # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
