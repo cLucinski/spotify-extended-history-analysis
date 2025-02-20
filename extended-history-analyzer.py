@@ -729,7 +729,7 @@ def get_top_n_playtime_chart_titles(
             - `title` (str): The main title for the chart, indicating the category, time range, and playtime metric.
             - `subtitle` (str): A subtitle providing details about the playback threshold.
     """
-    title = f"Top {top_n} {category_label} by Total Playtime (minutes) "
+    title = f"Top {top_n} {category_label} by Total Playtime (hours) "
     if date_range:
         title += f"from {date_range[0]} to {date_range[1]}"
     else:
@@ -770,14 +770,14 @@ def build_top_n_chart_by_playtime(
     fig = px.bar(
             ranked_data,
             y=search_category,
-            x="total_playtime_minutes",
+            x="total_playtime_hours",
             title=titles[0],
             color="rank",
             color_continuous_scale=px.colors.sequential.Plasma_r if global_config.get("dark_mode", False) else px.colors.sequential.Plasma,
             template="plotly_dark" if global_config.get("dark_mode", False) else "plotly",
             labels={
                 search_category: category_label,
-                "total_playtime_minutes": "Total Playtime (minutes)"
+                "total_playtime_hours": "Total Playtime (hours)"
             },
             hover_data={
                 "total_playtime_minutes": True,
@@ -786,12 +786,13 @@ def build_top_n_chart_by_playtime(
             }
         )
     fig.update_layout(
-        yaxis=dict(autorange="reversed"),  # Reverse bar order for better readability
-        title=dict(
-            subtitle=dict(
-                text=titles[1], 
-                font=dict(color="gray", size=13))
-        )
+        yaxis=dict(autorange="reversed") #,  # Reverse bar order for better readability
+        #uncomment to add subtitle again
+        # title=dict(
+        #     subtitle=dict(
+        #         text=titles[1], 
+        #         font=dict(color="gray", size=13))
+        # )
     )  
     fig.update_coloraxes(showscale=False)
     fig.show()
@@ -1459,16 +1460,19 @@ def prepare_cumulative_data_for_category(
 def build_cumulative_chart_for_category(
         cumulative_data: pd.DataFrame, 
         search_category: str, 
+        values: List[str],
         group_by: str = "day",
         date_range: Tuple[str, str] = None,
         user_order: List[str] = None
     ):
     """
     Builds and displays a line chart for cumulative listening history for specific albums, artists, or tracks.
+    Lines are sorted by the order of `values` first, then by `user_order`.
     
     Args:
         cumulative_data (pd.DataFrame): Aggregated data with cumulative listening time.
         search_category (str): The column representing the category (e.g., artist, album, or song).
+        values (List[str]): The values to filter by (e.g., a list of artist names, album names, or song names).
         group_by (str): The time unit used for grouping. Options: "day" or "month".
         date_range (Tuple[str, str]): Optional date range for the x-axis.
         user_order (List[str]): List of users in the desired order for the lines.
@@ -1477,20 +1481,27 @@ def build_cumulative_chart_for_category(
     if user_order is None:
         user_order = cumulative_data["user"].unique().tolist()
     
-    # Sort the DataFrame by user_order
+    # Sort the DataFrame by the order of `values` first, then by `user_order`
+    cumulative_data[search_category] = pd.Categorical(
+        cumulative_data[search_category],
+        categories=values,  # Use the values list for categories
+        ordered=True
+    )
     cumulative_data["user"] = pd.Categorical(
         cumulative_data["user"],
         categories=user_order,
         ordered=True
     )
 
-    # Keep rows chronological within each user
-    cumulative_data = cumulative_data.sort_values(by=['user', 'time_unit'])
+    # Sort the DataFrame by `search_category` (values order) and `user` (user_order)
+    cumulative_data = cumulative_data.sort_values(by=[search_category, "user", "time_unit"])
 
-    title = f"Cumulative Listening History for {', '.join(cumulative_data[search_category].unique())} ({'Daily' if group_by == 'day' else 'Monthly'} Intervals)"
+    # Generate the title
+    title = f"Cumulative Listening History for {', '.join(values)} ({'Daily' if group_by == 'day' else 'Monthly'} Intervals)"
     if date_range:
         title += f" from {date_range[0]} to {date_range[1]}"
     
+    # Create the line chart
     fig = px.line(
         cumulative_data,
         x="time_unit",
@@ -1517,7 +1528,7 @@ def build_cumulative_chart_for_category(
     elif group_by == "month":
         fig.update_xaxes(tickformat="%b %Y")  # Monthly ticks
     
-    fig.update_layout(hovermode="x unified")
+    # fig.update_layout(hovermode="x unified")
     fig.show()
 
 
@@ -1548,10 +1559,11 @@ def create_cumulative_chart_for_category(
         # Prepare cumulative listening data for the specified category
         cumulative_data = prepare_cumulative_data_for_category(df, search_category, values, group_by)
 
-        # Generate line chart with user_order
+        # Generate line chart with user_order and values order
         build_cumulative_chart_for_category(
             cumulative_data, 
             search_category, 
+            values,
             group_by, 
             date_range, 
             user_order
@@ -1593,9 +1605,10 @@ if __name__ == "__main__":
     create_cumulative_chart_for_category(
         df,
         search_category="master_metadata_album_artist_name",
-        values=["HOYO-MiX", "Yu-Peng Chen", "Chappell Roan", "Billie Eilish", "Yoko Shimomura", "Tame Impala", "Taylor Swift", "Stray Kids", "Gang of Youths", "Coldplay"],
+        # values=["HOYO-MiX", "Yu-Peng Chen", "Chappell Roan", "Yoko Shimomura", "Billie Eilish", "Tame Impala", "Taylor Swift", "Stray Kids", "Gang of Youths", "Coldplay"],
+        values=["Jeff Williams", "Casey Lee Williams"],
         group_by="day",
-        date_range=("2024-01-01", "2024-12-31"),
+        # date_range=("2024-01-01", "2024-12-31"),
         user_order=args.users
     )
     
@@ -1685,12 +1698,12 @@ if __name__ == "__main__":
     #     # date_range=("2024-01-01", "2024-11-15")  # Optional
     # )
 
-    # create_top_n_chart_by_playtime(
-    #     df,
-    #     top_n=25,
-    #     search_category="master_metadata_album_artist_name",
-    #     min_played_seconds=30,
-    #     date_range=("2024-01-01", "2024-12-31")  # Optional
-    # )
+    create_top_n_chart_by_playtime(
+        df,
+        top_n=10,
+        search_category="master_metadata_album_artist_name",
+        min_played_seconds=0,
+        date_range=("2024-01-01", "2024-12-31")  # Optional
+    )
 
     # create_heatmap_total_listening_time(df, date_range=('2024-01-01', '2024-12-31'))
