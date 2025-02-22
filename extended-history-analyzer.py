@@ -1347,9 +1347,9 @@ def build_cumulative_listening_line_chart(
     # Keep rows chronological within each user
     cumulative_listening_data = cumulative_listening_data.sort_values(by=['user', 'time_unit'])
 
-    title = f"Cumulative Listening History ({'Daily' if group_by == 'day' else 'Monthly'} Intervals)"
+    title = f"Cumulative Listening History {'(Monthly Intervals)' if group_by == 'month' else ''}"
     if date_range:
-        title += f" from {date_range[0]} to {date_range[1]}"
+        title += f"from {date_range[0]} to {date_range[1]}"
     
     fig = px.line(
         cumulative_listening_data,
@@ -1504,9 +1504,9 @@ def build_cumulative_chart_for_category(
     cumulative_data = cumulative_data.sort_values(by=[search_category, "user", "time_unit"])
 
     # Generate the title
-    title = f"Cumulative Listening History for Top {len(values)} {search_category.split("_")[-2].capitalize()}s{'(Monthly Intervals)' if group_by == 'month' else ''}"
+    title = f"Cumulative Listening History for Top {len(values)} {search_category.split("_")[-2].capitalize()}s {'(Monthly Intervals)' if group_by == 'month' else ''}"
     if date_range:
-        title += f" from {date_range[0]} to {date_range[1]}"
+        title += f"from {date_range[0]} to {date_range[1]}"
     
     # Create the line chart
     fig = px.line(
