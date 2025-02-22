@@ -677,6 +677,8 @@ def create_top_n_chart_by_listens(
         # Generate the chart
         build_top_n_chart_by_listens(ranked_data, search_category, title, category_labels[1])
 
+        return ranked_data[search_category].to_list()
+
     except ValueError as e:
         logging.error(e)
 
@@ -1502,7 +1504,7 @@ def build_cumulative_chart_for_category(
     cumulative_data = cumulative_data.sort_values(by=[search_category, "user", "time_unit"])
 
     # Generate the title
-    title = f"Cumulative Listening History for Top {len(values)} {search_category.split("_")[-2].capitalize()}s ({'Daily' if group_by == 'day' else 'Monthly'} Intervals)"
+    title = f"Cumulative Listening History for Top {len(values)} {search_category.split("_")[-2].capitalize()}s{'(Monthly Intervals)' if group_by == 'month' else ''}"
     if date_range:
         title += f" from {date_range[0]} to {date_range[1]}"
     
@@ -1589,7 +1591,7 @@ if __name__ == "__main__":
     
     # Update dark mode config
     global_config['dark_mode'] = args.dark_mode
-    output_file = f"output/{args.users}_spotify_analysis_output.txt"
+    output_file = f"output/{'_'.join(user.strip("[]'") for user in args.users)}_spotify_analysis_output.txt"
     target_artists = ["Coldplay"]
 
     # Load data for the specified users
