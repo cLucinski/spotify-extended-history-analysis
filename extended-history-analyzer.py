@@ -1322,7 +1322,7 @@ def build_cumulative_listening_line_chart(
         group_by: str = "day",
         date_range: Tuple[str, str] = None,
         user_order: List[str] = None  # Add user_order parameter
-    ):
+    ) -> pd.Figure:
     """
     Builds and displays a line chart for cumulative listening history.
     The lines are added in the order of users specified in `user_order`.
@@ -1332,6 +1332,9 @@ def build_cumulative_listening_line_chart(
         group_by (str): The time unit used for grouping. Options: "day" or "month".
         date_range (Tuple[str, str]): Optional date range for the x-axis.
         user_order (List[str]): List of users in the desired order for the lines.
+
+    Returns:
+        pd.Figure: The Plotly figure object for the cumulative listening line chart.
     """
     # Ensure the user_order is provided
     if user_order is None:
@@ -1379,6 +1382,7 @@ def build_cumulative_listening_line_chart(
     # fig.update_layout(hovermode="x unified")
     # fig.update_xaxes(rangeslider_visible=True)
     fig.show()
+    return fig
 
 
 def create_cumulative_listening_line_chart(
@@ -1386,7 +1390,7 @@ def create_cumulative_listening_line_chart(
         group_by: str = "day",
         date_range: Tuple[str, str] = None,
         user_order: List[str] = None  # Add user_order parameter
-    ):
+    ) -> pd.Figure:
     """
     Creates a line chart for cumulative listening history.
     
@@ -1395,6 +1399,9 @@ def create_cumulative_listening_line_chart(
         group_by (str): The time unit to group by. Options: "day" or "month".
         date_range (Tuple[str, str]): Optional date range for filtering data.
         user_order (List[str]): List of users in the desired order for the lines.
+
+    Returns:
+        pd.Figure: The Plotly figure object for the cumulative listening line chart.
     """
     try:
         # Filter for date range, if provided
@@ -1405,12 +1412,13 @@ def create_cumulative_listening_line_chart(
         cumulative_listening_data = prepare_cumulative_listening_data(df, group_by)
 
         # Generate line chart with user_order
-        build_cumulative_listening_line_chart(
+        fig = build_cumulative_listening_line_chart(
             cumulative_listening_data, 
             group_by, 
             date_range, 
             user_order
         )
+        return fig
     except ValueError as e:
         logging.error(e)
 
