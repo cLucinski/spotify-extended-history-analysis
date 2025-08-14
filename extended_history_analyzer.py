@@ -6,6 +6,7 @@ import os
 import numpy as np
 import pandas as pd
 import plotly.express as px
+from plotly.graph_objects import Figure
 from typing import List, Dict, Any, Set, Tuple
 
 # Global configuration dictionary
@@ -986,7 +987,8 @@ def create_heatmap_total_listening_time(df: pd.DataFrame, date_range: tuple = No
     cumulative_total = flat_data['hours_played'].sum()
 
     # Generate title
-    title = f"{args.users[0].capitalize()}'s Total Listening Time Heatmap"
+    title = f"Total Listening Time Heatmap"
+    # title = f"{args.users[0].capitalize()}'s Total Listening Time Heatmap"
     if date_range:
         title += f"\n({date_range[0]} to {date_range[1]})"
     
@@ -1322,7 +1324,7 @@ def build_cumulative_listening_line_chart(
         group_by: str = "day",
         date_range: Tuple[str, str] = None,
         user_order: List[str] = None  # Add user_order parameter
-    ) -> pd.Figure:
+    ) -> Figure:
     """
     Builds and displays a line chart for cumulative listening history.
     The lines are added in the order of users specified in `user_order`.
@@ -1334,7 +1336,7 @@ def build_cumulative_listening_line_chart(
         user_order (List[str]): List of users in the desired order for the lines.
 
     Returns:
-        pd.Figure: The Plotly figure object for the cumulative listening line chart.
+        Figure: The Plotly figure object for the cumulative listening line chart.
     """
     # Ensure the user_order is provided
     if user_order is None:
@@ -1381,7 +1383,7 @@ def build_cumulative_listening_line_chart(
     
     # fig.update_layout(hovermode="x unified")
     # fig.update_xaxes(rangeslider_visible=True)
-    fig.show()
+    # fig.show()
     return fig
 
 
@@ -1390,7 +1392,7 @@ def create_cumulative_listening_line_chart(
         group_by: str = "day",
         date_range: Tuple[str, str] = None,
         user_order: List[str] = None  # Add user_order parameter
-    ) -> pd.Figure:
+    ) -> Figure:
     """
     Creates a line chart for cumulative listening history.
     
@@ -1401,7 +1403,7 @@ def create_cumulative_listening_line_chart(
         user_order (List[str]): List of users in the desired order for the lines.
 
     Returns:
-        pd.Figure: The Plotly figure object for the cumulative listening line chart.
+        Figure: The Plotly figure object for the cumulative listening line chart.
     """
     try:
         # Filter for date range, if provided
@@ -1618,6 +1620,8 @@ if __name__ == "__main__":
         # Multi-user mode: Load and combine data for comparison
         df = load_and_combine_user_data(args.users)
 
+
+# ---
     
     # create_cumulative_chart_for_category(
     #     df,
