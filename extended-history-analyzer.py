@@ -1376,7 +1376,7 @@ def build_cumulative_listening_line_chart(
     elif group_by == "month":
         fig.update_xaxes(tickformat="%b %Y")  # Monthly ticks # dtick="M1",
     
-    fig.update_layout(hovermode="x unified")
+    # fig.update_layout(hovermode="x unified")
     # fig.update_xaxes(rangeslider_visible=True)
     fig.show()
 
@@ -1505,6 +1505,8 @@ def build_cumulative_chart_for_category(
 
     # Generate the title
     title = f"Cumulative Listening History for Top {len(values)} {search_category.split("_")[-2].capitalize()}s {'(Monthly Intervals)' if group_by == 'month' else ''}"
+    # TODO fix title
+    # title = f"Cumulative Listening History for {} {search_category.split("_")[-2].capitalize()}s {'(Monthly Intervals)' if group_by == 'month' else ''}"
     if date_range:
         title += f"from {date_range[0]} to {date_range[1]}"
     
@@ -1644,12 +1646,12 @@ if __name__ == "__main__":
     #     user_order=args.users
     # )
 
-    # create_cumulative_listening_line_chart(
-    #     df,
-    #     group_by="day",  # Options: "day" or "month"
-    #     # date_range=("2024-01-01", "2024-12-31"),  # Optional date range
-    #     user_order=args.users  # Pass user_order
-    # )
+    create_cumulative_listening_line_chart(
+        df,
+        group_by="day",  # Options: "day" or "month"
+        date_range=("2025-01-01", "2025-08-01"),  # Optional date range
+        user_order=args.users  # Pass user_order
+    )
 
     
     # unique_tracks, unique_artists, total_playback_time_sec = extract_insights(df)
@@ -1705,20 +1707,20 @@ if __name__ == "__main__":
     #     # date_range=("2024-01-01", "2024-11-15")  # Optional
     # )
 
-    top_n_entires = create_top_n_chart_by_playtime(
-        df,
-        top_n=10,
-        search_category="master_metadata_track_name",
-        min_played_seconds=0,
-        # date_range=("2024-01-01", "2024-12-31")  # Optional
-    )
-    create_cumulative_chart_for_category(
-        df,
-        search_category="master_metadata_track_name",
-        values=top_n_entires,
-        group_by="day",
-        # date_range=("2024-01-01", "2024-12-31"),
-        user_order=args.users
-    )
+    # top_n_entires = create_top_n_chart_by_playtime(
+    #     df,
+    #     top_n=25,
+    #     search_category="master_metadata_track_name",
+    #     min_played_seconds=0,
+    #     date_range=("2025-01-01", "2025-12-31")  # Optional
+    # )
+    # create_cumulative_chart_for_category(
+    #     df,
+    #     search_category="master_metadata_track_name",
+    #     values=top_n_entires,
+    #     group_by="day",
+    #     date_range=("2025-01-01", "2025-12-31"),
+    #     user_order=args.users
+    # )
 
     # create_heatmap_total_listening_time(df, date_range=('2024-01-01', '2024-12-31'))
