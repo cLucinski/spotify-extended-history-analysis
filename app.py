@@ -128,26 +128,37 @@ def create_artist_timeline_chart(df, top_artists, top_n, frequency):
 # ============================================================================
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def load_and_process_chunk(uploaded_file):
-    """Load and process a single file chunk"""
+def load_and_process_chunk(uploaded_file, min_seconds=30):
+    """Load and process a single file chunk with minimum play time filter"""
     try:
         content = uploaded_file.getvalue()
         df = pd.read_json(io.BytesIO(content))
         
         df['ts'] = pd.to_datetime(df['ts'])
         df['date'] = df['ts'].dt.date
-        df['date_dt'] = pd.to_datetime(df['date'])  # Add this line
+        df['date_dt'] = pd.to_datetime(df['date'])
         df['month'] = df['ts'].dt.to_period('M')
         
+        # Convert ms_played to seconds and apply filter
+        df['seconds_played'] = df['ms_played'] / 1000
+        initial_count = len(df)
+        df = df[df['seconds_played'] >= min_seconds]
+        filtered_count = initial_count - len(df)
+        
+        # Filter out podcasts
         music_df = df[df['master_metadata_track_name'].notna()].copy()
+        
+        # Store filtering stats
+        music_df.attrs['filtered_short_plays'] = filtered_count
         return music_df
     except Exception as e:
         st.error(f"Error processing {uploaded_file.name}: {str(e)}")
         return pd.DataFrame()
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def load_data_optimized(uploaded_files):
-    """Optimized data loading with progress tracking"""
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_data_optimized(uploaded_files, min_seconds=30):
+    """Optimized data loading with minimum play time filter"""
     if not uploaded_files:
         return pd.DataFrame()
     
@@ -156,12 +167,14 @@ def load_data_optimized(uploaded_files):
     
     all_dfs = []
     total_files = len(uploaded_files)
+    total_filtered = 0
     
     for i, uploaded_file in enumerate(uploaded_files):
         status_text.text(f"Processing {uploaded_file.name} ({i+1}/{total_files})")
-        df_chunk = load_and_process_chunk(uploaded_file)
+        df_chunk = load_and_process_chunk(uploaded_file, min_seconds)
         if not df_chunk.empty:
             all_dfs.append(df_chunk)
+            total_filtered += df_chunk.attrs.get('filtered_short_plays', 0)
         progress_bar.progress((i + 1) / total_files)
     
     status_text.text("Combining data...")
@@ -169,6 +182,10 @@ def load_data_optimized(uploaded_files):
     if all_dfs:
         combined_df = pd.concat(all_dfs, ignore_index=True)
         combined_df = combined_df.sort_values('ts').reset_index(drop=True)
+        
+        # Show filtering statistics
+        if total_filtered > 0:
+            st.sidebar.info(f"Filtered out {total_filtered:,} tracks under {min_seconds}s")
         
         status_text.text("Data loaded successfully!")
         progress_bar.empty()
@@ -240,13 +257,24 @@ def main():
         help="Upload all your Streaming_History_Audio_*.json files"
     )
     
+    # Add minimum seconds filter in sidebar
+    st.sidebar.header("2. Data Filters")
+    min_seconds = st.sidebar.slider(
+        "Minimum play time (seconds)",
+        min_value=0,
+        max_value=120,
+        value=30,
+        help="Filter out tracks played for less than this many seconds"
+    )
+    
     if uploaded_files:
         total_size = sum(file.size for file in uploaded_files) / (1024 * 1024)
         st.sidebar.info(f"Selected {len(uploaded_files)} files ({total_size:.1f} MB)")
         
         if st.sidebar.button("Load and Process Data", type="primary"):
             with st.spinner("Loading and processing your Spotify data..."):
-                df = load_data_optimized(uploaded_files)
+                # Pass min_seconds to the loading function
+                df = load_data_optimized(uploaded_files, min_seconds)
             
             if df.empty:
                 st.error("No data could be loaded. Please check your files.")
@@ -254,8 +282,10 @@ def main():
             
             st.session_state.df = df
             st.session_state.data_loaded = True
+            st.session_state.min_seconds = min_seconds
             
-            st.success(f"✅ Successfully loaded {len(df):,} listening records!")
+            # Show filtering info
+            st.success(f"✅ Successfully loaded {len(df):,} listening records (≥{min_seconds}s plays)!")
             
             # Quick summary
             col1, col2, col3 = st.columns(3)
