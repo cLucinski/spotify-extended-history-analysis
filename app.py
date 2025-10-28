@@ -282,9 +282,18 @@ def precompute_aggregates(_df, date_range=None, artist_filter=None, min_seconds=
     }
 
 def clear_cache_and_reload():
-    """Clear cache and force reload"""
+    """Clear cache, session state, and force full reload"""
+    # Clear all cached data
     st.cache_data.clear()
+    
+    # Clear ALL session state
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    
+    # Force garbage collection
     gc.collect()
+    
+    # Rerun the app from scratch
     st.rerun()
 
 # ============================================================================
@@ -494,9 +503,11 @@ def main():
             st.metric("Most Active Month", f"{aggregates['monthly_listens'].loc[aggregates['monthly_listens']['count'].idxmax(), 'month']}")
             st.metric("Total Unique Songs", f"{aggregates['filtered_df']['master_metadata_track_name'].nunique():,}")
 
-# Initialize session state
+# Initialize session state variables if they don't exist
 if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
+if 'df' not in st.session_state:
+    st.session_state.df = None
 
 if __name__ == "__main__":
     main()
