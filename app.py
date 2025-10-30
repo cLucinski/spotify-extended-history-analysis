@@ -93,7 +93,13 @@ def create_top_artists_chart(aggregates, top_n, analysis_type):
     fig.update_layout(
         yaxis={'categoryorder': 'total ascending'},
         showlegend=False,
-        height=600
+        height=600,
+        # Add grid lines for better readability
+        xaxis=dict(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='lightgray'
+        )
     )
     
     # Customize color scale to make ranking more visible
@@ -137,7 +143,13 @@ def create_top_songs_chart(aggregates, top_n, analysis_type):
     fig.update_layout(
         yaxis={'categoryorder': 'total ascending'},
         showlegend=False,
-        height=600
+        height=600,
+        # Add grid lines for better readability
+        xaxis=dict(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='lightgray'
+        )
     )
     
     # Customize color scale
@@ -181,33 +193,29 @@ def create_artist_timeline_chart(df, top_artists, top_n, frequency):
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_and_process_chunk(uploaded_file, min_seconds=30):
-    """Load and process a single file chunk with minimum play time filter"""
+    """Load and process a single file chunk"""
     try:
         content = uploaded_file.getvalue()
         df = pd.read_json(io.BytesIO(content))
         
-        df['ts'] = pd.to_datetime(df['ts'])
+        # Convert to datetime and remove timezone info
+        df['ts'] = pd.to_datetime(df['ts']).dt.tz_localize(None)
+        
         df['date'] = df['ts'].dt.date
         df['date_dt'] = pd.to_datetime(df['date'])
         df['month'] = df['ts'].dt.to_period('M')
         
-        # Convert ms_played to seconds and apply filter
+        # Convert ms_played to seconds and filter
         df['seconds_played'] = df['ms_played'] / 1000
-        initial_count = len(df)
         df = df[df['seconds_played'] >= min_seconds]
-        filtered_count = initial_count - len(df)
         
         # Filter out podcasts
         music_df = df[df['master_metadata_track_name'].notna()].copy()
-        
-        # Store filtering stats
-        music_df.attrs['filtered_short_plays'] = filtered_count
         return music_df
     except Exception as e:
         st.error(f"Error processing {uploaded_file.name}: {str(e)}")
         return pd.DataFrame()
 
-@st.cache_data(show_spinner=False, ttl=3600)
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_data_optimized(uploaded_files, min_seconds=30):
     """Optimized data loading with minimum play time filter"""
