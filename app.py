@@ -161,6 +161,56 @@ def create_top_songs_chart(aggregates, top_n, analysis_type):
     
     return fig
 
+def create_top_albums_chart(aggregates, top_n, analysis_type):
+    """Create horizontal bar chart for top albums with rank-based coloring"""
+    if analysis_type == 'Total Playtime':
+        top_albums = aggregates['top_albums_time'].head(top_n).copy()
+        x_col = 'total_hours'
+        title = f'Top {top_n} Albums by Playtime'
+        x_label = 'Hours Played'
+    else:
+        top_albums = aggregates['top_albums_count'].head(top_n).copy()
+        x_col = 'count'
+        title = f'Top {top_n} Albums by Plays'
+        x_label = 'Number of Plays'
+    
+    top_albums['album_artist'] = top_albums['master_metadata_album_album_name'] + ' - ' + top_albums['master_metadata_album_artist_name']
+    
+    # Create ranking column with "min" method to handle ties
+    top_albums['rank'] = top_albums[x_col].rank(method="min", ascending=False).astype(int)
+    
+    fig = px.bar(
+        top_albums, 
+        x=x_col, 
+        y='album_artist',
+        orientation='h',
+        title=title,
+        labels={x_col: x_label, 'album_artist': 'Album'},
+        color='rank',
+        color_continuous_scale='plasma_r'
+    )
+    
+    fig.update_layout(
+        yaxis={'categoryorder': 'total ascending'},
+        showlegend=False,
+        height=600,
+        # Add grid lines for better readability
+        xaxis=dict(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='lightgray'
+        )
+    )
+    
+    # Customize color scale
+    fig.update_coloraxes(
+        # colorbar_title="Rank",
+        # colorscale="plasma_r",
+        showscale=False
+    )
+    
+    return fig
+
 def create_artist_timeline_chart(df, top_artists, top_n, frequency):
     """Show listening timeline for top artists"""
     top_artist_names = top_artists.head(top_n).index
@@ -306,6 +356,17 @@ def precompute_aggregates(_df, date_range=None, artist_filter=None, min_seconds=
                      .reset_index(name='total_hours')
                      .sort_values('total_hours', ascending=False))
     
+    # Top albums (both count and playtime)
+    top_albums_count = (filtered_df.groupby(['master_metadata_album_album_name', 'master_metadata_album_artist_name'])
+                      .size()
+                      .reset_index(name='count')
+                      .sort_values('count', ascending=False))
+    
+    top_albums_time = (filtered_df.groupby(['master_metadata_album_album_name', 'master_metadata_album_artist_name'])
+                     ['hours_played'].sum()
+                     .reset_index(name='total_hours')
+                     .sort_values('total_hours', ascending=False))
+    
     return {
         'daily_listens': daily_listens,
         'monthly_listens': monthly_listens,
@@ -313,6 +374,8 @@ def precompute_aggregates(_df, date_range=None, artist_filter=None, min_seconds=
         'top_artists_time': top_artists_time,
         'top_songs_count': top_songs_count,
         'top_songs_time': top_songs_time,
+        'top_albums_count': top_albums_count,
+        'top_albums_time': top_albums_time,
         'filtered_df': filtered_df
     }
 
@@ -445,8 +508,8 @@ def main():
     # ============================================================================
     
     # Display charts in tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📈 Timeline", "🎤 Top Artists", "🎵 Top Songs", "👨‍🎤 Artist Timeline", "📊 Summary"
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "📈 Timeline", "🎤 Top Artists", "🎵 Top Songs", "💽 Top Albums", "👨‍🎤 Artist Timeline", "📊 Summary"
     ])
     
     with tab1:
@@ -507,6 +570,11 @@ def main():
         st.plotly_chart(songs_fig, use_container_width=True)
     
     with tab4:
+        st.subheader(f"Top {top_n} Albums")
+        albums_fig = create_top_albums_chart(aggregates, top_n, analysis_type)
+        st.plotly_chart(albums_fig, use_container_width=True)
+
+    with tab5:
         st.subheader(f"Artist Listening Timeline")
         artist_timeline_fig = create_artist_timeline_chart(
             aggregates['filtered_df'], 
@@ -516,7 +584,7 @@ def main():
         )
         st.plotly_chart(artist_timeline_fig, use_container_width=True)
     
-    with tab5:
+    with tab6:
         st.subheader("Data Summary")
         
         col1, col2 = st.columns(2)
