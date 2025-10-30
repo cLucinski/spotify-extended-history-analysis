@@ -58,52 +58,70 @@ def create_timeline_chart(aggregates, frequency, analysis_type):
     return fig
 
 def create_top_artists_chart(aggregates, top_n, analysis_type):
-    """Create horizontal bar chart for top artists"""
+    """Create horizontal bar chart for top artists with rank-based coloring"""
     if analysis_type == 'Total Playtime':
         top_artists = aggregates['top_artists_time'].head(top_n)
         x_values = top_artists.values
         title = f'Top {top_n} Artists by Playtime'
         x_label = 'Hours Played'
-        color_scale = 'viridis'
     else:
         top_artists = aggregates['top_artists_count'].head(top_n)
         x_values = top_artists.values
         title = f'Top {top_n} Artists by Plays'
         x_label = 'Number of Plays'
-        color_scale = 'plasma'
+    
+    # Convert Series to DataFrame for ranking
+    chart_df = pd.DataFrame({
+        'artist': top_artists.index,
+        'value': top_artists.values
+    })
+    
+    # Create ranking column with "min" method to handle ties
+    chart_df['rank'] = chart_df['value'].rank(method="min", ascending=False).astype(int)
     
     fig = px.bar(
-        x=x_values, 
-        y=top_artists.index,
+        chart_df,
+        x='value', 
+        y='artist',
         orientation='h',
         title=title,
-        labels={'x': x_label, 'y': 'Artist'},
-        color=x_values,
-        color_continuous_scale=color_scale
+        labels={'value': x_label, 'artist': 'Artist'},
+        color='rank',
+        color_continuous_scale='plasma_r',
     )
+    
     fig.update_layout(
         yaxis={'categoryorder': 'total ascending'},
         showlegend=False,
-        height=500
+        height=600
     )
+    
+    # Customize color scale to make ranking more visible
+    fig.update_coloraxes(
+        # colorbar_title="Rank",
+        # colorscale="plasma_r",  # Dark colors for lower ranks, bright for top ranks
+        showscale=False
+    )
+    
     return fig
 
 def create_top_songs_chart(aggregates, top_n, analysis_type):
-    """Create horizontal bar chart for top songs"""
+    """Create horizontal bar chart for top songs with rank-based coloring"""
     if analysis_type == 'Total Playtime':
         top_songs = aggregates['top_songs_time'].head(top_n).copy()
         x_col = 'total_hours'
         title = f'Top {top_n} Songs by Playtime'
         x_label = 'Hours Played'
-        color_scale = 'viridis'
     else:
         top_songs = aggregates['top_songs_count'].head(top_n).copy()
         x_col = 'count'
         title = f'Top {top_n} Songs by Plays'
         x_label = 'Number of Plays'
-        color_scale = 'plasma'
     
     top_songs['song_artist'] = top_songs['master_metadata_track_name'] + ' - ' + top_songs['master_metadata_album_artist_name']
+    
+    # Create ranking column with "min" method to handle ties
+    top_songs['rank'] = top_songs[x_col].rank(method="min", ascending=False).astype(int)
     
     fig = px.bar(
         top_songs, 
@@ -112,14 +130,23 @@ def create_top_songs_chart(aggregates, top_n, analysis_type):
         orientation='h',
         title=title,
         labels={x_col: x_label, 'song_artist': 'Song'},
-        color=x_col,
-        color_continuous_scale=color_scale
+        color='rank',
+        color_continuous_scale='plasma_r'
     )
+    
     fig.update_layout(
         yaxis={'categoryorder': 'total ascending'},
         showlegend=False,
         height=600
     )
+    
+    # Customize color scale
+    fig.update_coloraxes(
+        # colorbar_title="Rank",
+        # colorscale="plasma_r",
+        showscale=False
+    )
+    
     return fig
 
 def create_artist_timeline_chart(df, top_artists, top_n, frequency):
