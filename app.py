@@ -61,12 +61,10 @@ def create_top_artists_chart(aggregates, top_n, analysis_type):
     """Create horizontal bar chart for top artists with rank-based coloring"""
     if analysis_type == 'Total Playtime':
         top_artists = aggregates['top_artists_time'].head(top_n)
-        x_values = top_artists.values
         title = f'Top {top_n} Artists by Playtime'
         x_label = 'Hours Played'
     else:
         top_artists = aggregates['top_artists_count'].head(top_n)
-        x_values = top_artists.values
         title = f'Top {top_n} Artists by Plays'
         x_label = 'Number of Plays'
     
@@ -164,30 +162,32 @@ def create_top_songs_chart(aggregates, top_n, analysis_type):
 def create_top_albums_chart(aggregates, top_n, analysis_type):
     """Create horizontal bar chart for top albums with rank-based coloring"""
     if analysis_type == 'Total Playtime':
-        top_albums = aggregates['top_albums_time'].head(top_n).copy()
-        x_col = 'total_hours'
+        top_albums = aggregates['top_albums_time'].head(top_n)
         title = f'Top {top_n} Albums by Playtime'
         x_label = 'Hours Played'
     else:
-        top_albums = aggregates['top_albums_count'].head(top_n).copy()
-        x_col = 'count'
+        top_albums = aggregates['top_albums_count'].head(top_n)
         title = f'Top {top_n} Albums by Plays'
         x_label = 'Number of Plays'
     
-    top_albums['album_artist'] = top_albums['master_metadata_album_album_name'] + ' - ' + top_albums['master_metadata_album_artist_name']
+    # Convert Series to DataFrame for ranking
+    chart_df = pd.DataFrame({
+        'album': top_albums.index,
+        'value': top_albums.values
+    })
     
     # Create ranking column with "min" method to handle ties
-    top_albums['rank'] = top_albums[x_col].rank(method="min", ascending=False).astype(int)
+    chart_df['rank'] = chart_df['value'].rank(method="min", ascending=False).astype(int)
     
     fig = px.bar(
-        top_albums, 
-        x=x_col, 
-        y='album_artist',
+        chart_df,
+        x='value', 
+        y='album',
         orientation='h',
         title=title,
-        labels={x_col: x_label, 'album_artist': 'Album'},
+        labels={'value': x_label, 'album': 'Album'},
         color='rank',
-        color_continuous_scale='plasma_r'
+        color_continuous_scale='plasma_r',
     )
     
     fig.update_layout(
@@ -202,7 +202,7 @@ def create_top_albums_chart(aggregates, top_n, analysis_type):
         )
     )
     
-    # Customize color scale
+    # Customize color scale to make ranking more visible
     fig.update_coloraxes(
         # colorbar_title="Rank",
         # colorscale="plasma_r",
@@ -357,15 +357,8 @@ def precompute_aggregates(_df, date_range=None, artist_filter=None, min_seconds=
                      .sort_values('total_hours', ascending=False))
     
     # Top albums (both count and playtime)
-    top_albums_count = (filtered_df.groupby(['master_metadata_album_album_name', 'master_metadata_album_artist_name'])
-                      .size()
-                      .reset_index(name='count')
-                      .sort_values('count', ascending=False))
-    
-    top_albums_time = (filtered_df.groupby(['master_metadata_album_album_name', 'master_metadata_album_artist_name'])
-                     ['hours_played'].sum()
-                     .reset_index(name='total_hours')
-                     .sort_values('total_hours', ascending=False))
+    top_albums_count = filtered_df['master_metadata_album_album_name'].value_counts()
+    top_albums_time = filtered_df.groupby('master_metadata_album_album_name')['hours_played'].sum().sort_values(ascending=False)
     
     return {
         'daily_listens': daily_listens,
