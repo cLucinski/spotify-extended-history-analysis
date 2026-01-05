@@ -211,6 +211,289 @@ def create_top_albums_chart(aggregates, top_n, analysis_type):
     
     return fig
 
+#TODO: Proper labels
+#TODO: Improve hover info
+#TODO: Create an individual song/artist/album analysis page
+
+def create_cumulative_timeline_chart(aggregates, frequency, analysis_type):
+    """Create cumulative timeline chart based on selected frequency and analysis type"""
+    if frequency == 'Daily':
+        data = aggregates['daily_listens'].copy()
+        data['date_dt'] = pd.to_datetime(data['date'])
+        
+        if analysis_type == 'Total Playtime':
+            y_col = 'total_hours'
+            title = 'Cumulative Listening Time'
+            y_label = 'Cumulative Hours Played'
+        else:
+            y_col = 'count'
+            title = 'Cumulative Listening Activity'
+            y_label = 'Cumulative Number of Plays'
+        
+        # Calculate cumulative sum
+        data['cumulative'] = data[y_col].cumsum()
+        
+        fig = px.line(data, x='date_dt', y='cumulative', 
+                     title=title,
+                     labels={'date_dt': 'Date', 'cumulative': y_label})
+        
+    else:  # Monthly
+        data = aggregates['monthly_listens'].copy()
+        
+        if analysis_type == 'Total Playtime':
+            y_col = 'total_hours'
+            title = 'Cumulative Monthly Listening Time'
+            y_label = 'Cumulative Hours Played'
+        else:
+            y_col = 'count'
+            title = 'Cumulative Monthly Listening Activity'
+            y_label = 'Cumulative Number of Plays'
+            
+        # Calculate cumulative sum
+        data['cumulative'] = data[y_col].cumsum()
+        
+        fig = px.line(data, x='month', y='cumulative',
+                    title=title,
+                    labels={'month': 'Month', 'cumulative': y_label})
+    
+    fig.update_layout(
+        hovermode='x unified',
+        showlegend=False,
+        height=600
+    )
+    return fig
+
+def create_cumulative_artist_chart(df, top_artists, top_n, frequency, analysis_type):
+    """Create cumulative timeline for top artists, ordered by total"""
+    top_artist_names = top_artists.head(top_n).index
+    
+    # Get the filtered data for top artists
+    artist_df = df[df['master_metadata_album_artist_name'].isin(top_artist_names)].copy()
+    
+    if frequency == 'Daily':
+        if analysis_type == 'Total Playtime':
+            # Group by date and artist, sum playtime
+            daily_data = artist_df.groupby(['date_dt', 'master_metadata_album_artist_name'])['hours_played'].sum().reset_index()
+        else:
+            # Group by date and artist, count plays
+            daily_data = artist_df.groupby(['date_dt', 'master_metadata_album_artist_name']).size().reset_index(name='count')
+        
+        # Create cumulative sum for each artist
+        cumulative_data = []
+        for artist in top_artist_names:
+            artist_data = daily_data[daily_data['master_metadata_album_artist_name'] == artist].sort_values('date_dt')
+            if analysis_type == 'Total Playtime':
+                artist_data['cumulative'] = artist_data['hours_played'].cumsum()
+            else:
+                artist_data['cumulative'] = artist_data['count'].cumsum()
+            cumulative_data.append(artist_data)
+        
+        cumulative_df = pd.concat(cumulative_data, ignore_index=True)
+        x_col = 'date_dt'
+        
+    else:  # Monthly
+        if analysis_type == 'Total Playtime':
+            # Group by month and artist, sum playtime
+            monthly_data = artist_df.groupby(['month', 'master_metadata_album_artist_name'])['hours_played'].sum().reset_index()
+        else:
+            # Group by month and artist, count plays
+            monthly_data = artist_df.groupby(['month', 'master_metadata_album_artist_name']).size().reset_index(name='count')
+        
+        monthly_data['month'] = monthly_data['month'].astype(str)
+        
+        # Create cumulative sum for each artist
+        cumulative_data = []
+        for artist in top_artist_names:
+            artist_data = monthly_data[monthly_data['master_metadata_album_artist_name'] == artist].sort_values('month')
+            if analysis_type == 'Total Playtime':
+                artist_data['cumulative'] = artist_data['hours_played'].cumsum()
+            else:
+                artist_data['cumulative'] = artist_data['count'].cumsum()
+            cumulative_data.append(artist_data)
+        
+        cumulative_df = pd.concat(cumulative_data, ignore_index=True)
+        x_col = 'month'
+    
+    # Calculate final totals for legend ordering
+    if analysis_type == 'Total Playtime':
+        final_totals = cumulative_df.groupby('master_metadata_album_artist_name')['cumulative'].max().sort_values(ascending=False)
+    else:
+        # For play count, we need to get the actual total counts from the original data
+        if analysis_type == 'Total Playtime':
+            final_totals = artist_df.groupby('master_metadata_album_artist_name')['hours_played'].sum().sort_values(ascending=False)
+        else:
+            final_totals = artist_df['master_metadata_album_artist_name'].value_counts()
+    
+    # Create ordered category for legend
+    legend_order = final_totals.index.tolist()
+    
+    fig = px.line(
+        cumulative_df, 
+        x=x_col, 
+        y='cumulative',
+        color='master_metadata_album_artist_name',
+        title=f'Cumulative Listening for Top {top_n} Artists',
+        category_orders={"master_metadata_album_artist_name": legend_order}
+    )
+    
+    fig.update_layout(
+        height=600, 
+        showlegend=True,
+        legend=dict(
+            traceorder='normal'  # This ensures the order is respected
+        )
+    )
+    return fig
+
+def create_cumulative_song_chart(df, top_songs_data, top_n, frequency, analysis_type):
+    """Create cumulative timeline for top songs, ordered by total"""
+    # Get top songs and create combined identifier
+    top_songs = top_songs_data.head(top_n).copy()
+    top_songs['song_artist'] = top_songs['master_metadata_track_name'] + ' - ' + top_songs['master_metadata_album_artist_name']
+    top_song_identifiers = top_songs['song_artist'].tolist()
+    
+    # Create the same identifier in the main dataframe
+    df['song_artist'] = df['master_metadata_track_name'] + ' - ' + df['master_metadata_album_artist_name']
+    song_df = df[df['song_artist'].isin(top_song_identifiers)].copy()
+    
+    if frequency == 'Daily':
+        if analysis_type == 'Total Playtime':
+            daily_data = song_df.groupby(['date_dt', 'song_artist'])['hours_played'].sum().reset_index()
+        else:
+            daily_data = song_df.groupby(['date_dt', 'song_artist']).size().reset_index(name='count')
+        
+        # Create cumulative sum for each song
+        cumulative_data = []
+        for song in top_song_identifiers:
+            song_data = daily_data[daily_data['song_artist'] == song].sort_values('date_dt')
+            if analysis_type == 'Total Playtime':
+                song_data['cumulative'] = song_data['hours_played'].cumsum()
+            else:
+                song_data['cumulative'] = song_data['count'].cumsum()
+            cumulative_data.append(song_data)
+        
+        cumulative_df = pd.concat(cumulative_data, ignore_index=True)
+        x_col = 'date_dt'
+        
+    else:  # Monthly
+        if analysis_type == 'Total Playtime':
+            monthly_data = song_df.groupby(['month', 'song_artist'])['hours_played'].sum().reset_index()
+        else:
+            monthly_data = song_df.groupby(['month', 'song_artist']).size().reset_index(name='count')
+        
+        monthly_data['month'] = monthly_data['month'].astype(str)
+        
+        # Create cumulative sum for each song
+        cumulative_data = []
+        for song in top_song_identifiers:
+            song_data = monthly_data[monthly_data['song_artist'] == song].sort_values('month')
+            if analysis_type == 'Total Playtime':
+                song_data['cumulative'] = song_data['hours_played'].cumsum()
+            else:
+                song_data['cumulative'] = song_data['count'].cumsum()
+            cumulative_data.append(song_data)
+        
+        cumulative_df = pd.concat(cumulative_data, ignore_index=True)
+        x_col = 'month'
+    
+    # Calculate final totals for legend ordering
+    if analysis_type == 'Total Playtime':
+        final_totals = cumulative_df.groupby('song_artist')['cumulative'].max().sort_values(ascending=False)
+    else:
+        final_totals = song_df['song_artist'].value_counts()
+    
+    legend_order = final_totals.index.tolist()
+    
+    fig = px.line(
+        cumulative_df, 
+        x=x_col, 
+        y='cumulative',
+        color='song_artist',
+        title=f'Cumulative Listening for Top {top_n} Songs',
+        category_orders={"song_artist": legend_order}
+    )
+    
+    fig.update_layout(
+        height=600, 
+        showlegend=True,
+        legend=dict(
+            traceorder='normal'
+        )
+    )
+    return fig
+
+def create_cumulative_album_chart(df, top_albums, top_n, frequency, analysis_type):
+    """Create cumulative timeline for top albums, ordered by total"""
+    top_album_names = top_albums.head(top_n).index
+    
+    album_df = df[df['master_metadata_album_album_name'].isin(top_album_names)].copy()
+    
+    if frequency == 'Daily':
+        if analysis_type == 'Total Playtime':
+            daily_data = album_df.groupby(['date_dt', 'master_metadata_album_album_name'])['hours_played'].sum().reset_index()
+        else:
+            daily_data = album_df.groupby(['date_dt', 'master_metadata_album_album_name']).size().reset_index(name='count')
+        
+        # Create cumulative sum for each album
+        cumulative_data = []
+        for album in top_album_names:
+            album_data = daily_data[daily_data['master_metadata_album_album_name'] == album].sort_values('date_dt')
+            if analysis_type == 'Total Playtime':
+                album_data['cumulative'] = album_data['hours_played'].cumsum()
+            else:
+                album_data['cumulative'] = album_data['count'].cumsum()
+            cumulative_data.append(album_data)
+        
+        cumulative_df = pd.concat(cumulative_data, ignore_index=True)
+        x_col = 'date_dt'
+        
+    else:  # Monthly
+        if analysis_type == 'Total Playtime':
+            monthly_data = album_df.groupby(['month', 'master_metadata_album_album_name'])['hours_played'].sum().reset_index()
+        else:
+            monthly_data = album_df.groupby(['month', 'master_metadata_album_album_name']).size().reset_index(name='count')
+        
+        monthly_data['month'] = monthly_data['month'].astype(str)
+        
+        # Create cumulative sum for each album
+        cumulative_data = []
+        for album in top_album_names:
+            album_data = monthly_data[monthly_data['master_metadata_album_album_name'] == album].sort_values('month')
+            if analysis_type == 'Total Playtime':
+                album_data['cumulative'] = album_data['hours_played'].cumsum()
+            else:
+                album_data['cumulative'] = album_data['count'].cumsum()
+            cumulative_data.append(album_data)
+        
+        cumulative_df = pd.concat(cumulative_data, ignore_index=True)
+        x_col = 'month'
+    
+    # Calculate final totals for legend ordering
+    if analysis_type == 'Total Playtime':
+        final_totals = cumulative_df.groupby('master_metadata_album_album_name')['cumulative'].max().sort_values(ascending=False)
+    else:
+        final_totals = album_df['master_metadata_album_album_name'].value_counts()
+    
+    legend_order = final_totals.index.tolist()
+    
+    fig = px.line(
+        cumulative_df, 
+        x=x_col, 
+        y='cumulative',
+        color='master_metadata_album_album_name',
+        title=f'Cumulative Listening for Top {top_n} Albums',
+        category_orders={"master_metadata_album_album_name": legend_order}
+    )
+    
+    fig.update_layout(
+        height=600, 
+        showlegend=True,
+        legend=dict(
+            traceorder='normal'
+        )
+    )
+    return fig
+
 def create_artist_timeline_chart(df, top_artists, top_n, frequency):
     """Show listening timeline for top artists"""
     top_artist_names = top_artists.head(top_n).index
@@ -234,7 +517,7 @@ def create_artist_timeline_chart(df, top_artists, top_n, frequency):
         color='master_metadata_album_artist_name',
         title=f'Listening Timeline for Top {top_n} Artists'
     )
-    fig.update_layout(height=500, showlegend=True)
+    fig.update_layout(height=600, showlegend=True)
     return fig
 
 # ============================================================================
@@ -502,7 +785,7 @@ def main():
     
     # Display charts in tabs
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📈 Timeline", "🎤 Top Artists", "🎵 Top Songs", "💽 Top Albums", "👨‍🎤 Artist Timeline", "📊 Summary"
+        "📊 Timeline", "🎤 Top Artists", "🎵 Top Songs", "💽 Top Albums", "👨‍🎤 Artist Timeline", "📋 Summary"
     ])
     
     with tab1:
@@ -535,11 +818,26 @@ def main():
             else:
                 peak_data = aggregates['daily_listens'].loc[aggregates['daily_listens']['count'].idxmax()]
                 st.metric("Peak Listening Day", f"{peak_data['count']} plays")
+        
+        # Cumulative overall timeline
+        cumulative_fig = create_cumulative_timeline_chart(aggregates, timeline_freq, analysis_type)
+        st.plotly_chart(cumulative_fig, use_container_width=True)
 
     with tab2:
         st.subheader(f"Top {top_n} Artists")
         artists_fig = create_top_artists_chart(aggregates, top_n, analysis_type)
         st.plotly_chart(artists_fig, use_container_width=True)
+
+        # Cumulative artists chart
+        # st.subheader(f"Top {min(top_n, 15)} Artists")
+        artist_cumulative_fig = create_cumulative_artist_chart(
+            aggregates['filtered_df'],
+            aggregates['top_artists_count' if analysis_type == 'Number of Plays' else 'top_artists_time'],
+            min(top_n, 15),  # Limit for clarity
+            timeline_freq,
+            analysis_type
+        )
+        st.plotly_chart(artist_cumulative_fig, use_container_width=True)
         
         # Artist statistics
         col1, col2 = st.columns(2)
@@ -561,11 +859,33 @@ def main():
         st.subheader(f"Top {top_n} Songs")
         songs_fig = create_top_songs_chart(aggregates, top_n, analysis_type)
         st.plotly_chart(songs_fig, use_container_width=True)
+
+        # Cumulative songs chart
+        # st.subheader(f"Top {min(top_n, 15)} Songs")
+        song_cumulative_fig = create_cumulative_song_chart(
+            aggregates['filtered_df'],
+            aggregates['top_songs_count' if analysis_type == 'Number of Plays' else 'top_songs_time'],
+            min(top_n, 15),  # Limit for clarity
+            timeline_freq,
+            analysis_type
+        )
+        st.plotly_chart(song_cumulative_fig, use_container_width=True)
     
     with tab4:
         st.subheader(f"Top {top_n} Albums")
         albums_fig = create_top_albums_chart(aggregates, top_n, analysis_type)
         st.plotly_chart(albums_fig, use_container_width=True)
+
+        # Cumulative albums chart
+        # st.subheader(f"Top {min(top_n, 15)} Albums")
+        album_cumulative_fig = create_cumulative_album_chart(
+            aggregates['filtered_df'],
+            aggregates['top_albums_count' if analysis_type == 'Number of Plays' else 'top_albums_time'],
+            min(top_n, 15),  # Limit for clarity
+            timeline_freq,
+            analysis_type
+        )
+        st.plotly_chart(album_cumulative_fig, use_container_width=True)
 
     with tab5:
         st.subheader(f"Artist Listening Timeline")
