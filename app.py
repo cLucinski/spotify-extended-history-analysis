@@ -30,7 +30,7 @@ def create_timeline_chart(aggregates, frequency, analysis_type):
             title = 'Daily Listening Activity'
             y_label = 'Number of Plays'
         
-        fig = px.line(data, x='date_dt', y=y_col, 
+        fig = px.bar(data, x='date_dt', y=y_col, 
                      title=title,
                      labels={'date_dt': 'Date', y_col: y_label})
         
@@ -510,7 +510,7 @@ def create_artist_timeline_chart(df, top_artists, top_n, frequency):
         artist_timeline['month'] = artist_timeline['month'].astype(str)
         x_col = 'month'
     
-    fig = px.line(
+    fig = px.bar(
         artist_timeline, 
         x=x_col, 
         y='count',
@@ -523,6 +523,8 @@ def create_artist_timeline_chart(df, top_artists, top_n, frequency):
 # ============================================================================
 # DATA PROCESSING FUNCTIONS
 # ============================================================================
+
+#TODO: Figure out timezone stuff
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_and_process_chunk(uploaded_file, min_seconds=30):
@@ -776,8 +778,15 @@ def main():
     if st.sidebar.button("Clear Cache & Reload"):
         clear_cache_and_reload()
     
+    # Get min_seconds from session state
+    current_min_seconds = st.session_state.get('min_seconds', 30)
+    
     # Precompute aggregates
-    aggregates = precompute_aggregates(df, date_range, selected_artists if selected_artists else None)
+    aggregates = precompute_aggregates(
+        df, 
+        date_range, 
+        selected_artists if selected_artists else None,
+        current_min_seconds)
     
     # ============================================================================
     # CHART DISPLAY SECTION
