@@ -494,51 +494,65 @@ def create_cumulative_album_chart(df, top_albums, top_n, frequency, analysis_typ
     )
     return fig
 
-def create_yearly_cumulative_comparison(df, analysis_type):
-    """Compare cumulative listening across years on a single-year timeline"""
+def create_yearly_cumulative_comparison(df, timeline_freq, analysis_type):
+    """Compare cumulative listening across years on a normalized timeline"""
 
     data = df.copy()
-
-    # Extract year and day-of-year
     data['year'] = data['date_dt'].dt.year
-    data['day_of_year'] = data['date_dt'].dt.dayofyear
 
-    # Remove Feb 29 to align all years cleanly
-    data = data[data['day_of_year'] <= 365]
+    if timeline_freq == 'Daily':
+        # Day-of-year alignment
+        data['time_index'] = data['date_dt'].dt.dayofyear
+        data = data[data['time_index'] <= 365]
+
+        x_label = 'Day of Year'
+    else:
+        # Month-of-year alignment
+        data['time_index'] = data['date_dt'].dt.month
+        x_label = 'Month'
 
     if analysis_type == 'Total Playtime':
-        daily = (
-            data.groupby(['year', 'day_of_year'])['hours_played']
+        grouped = (
+            data.groupby(['year', 'time_index'])['hours_played']
             .sum()
             .reset_index(name='value')
         )
         y_label = 'Cumulative Hours Played'
         title = 'Year-over-Year Cumulative Listening (Hours)'
     else:
-        daily = (
-            data.groupby(['year', 'day_of_year'])
+        grouped = (
+            data.groupby(['year', 'time_index'])
             .size()
             .reset_index(name='value')
         )
         y_label = 'Cumulative Plays'
         title = 'Year-over-Year Cumulative Listening (Plays)'
 
-    # Sort and compute cumulative sum per year
-    daily = daily.sort_values(['year', 'day_of_year'])
-    daily['cumulative'] = daily.groupby('year')['value'].cumsum()
+    # Sort and cumulative sum per year
+    grouped = grouped.sort_values(['year', 'time_index'])
+    grouped['cumulative'] = grouped.groupby('year')['value'].cumsum()
 
     fig = px.line(
-        daily,
-        x='day_of_year',
+        grouped,
+        x='time_index',
         y='cumulative',
         color='year',
         title=title,
         labels={
-            'day_of_year': 'Day of Year',
+            'time_index': x_label,
             'cumulative': y_label,
             'year': 'Year'
         }
     )
+
+    # Month labels if monthly
+    if timeline_freq == 'Monthly':
+        fig.update_xaxes(
+            tickmode='array',
+            tickvals=list(range(1, 13)),
+            ticktext=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        )
 
     fig.update_layout(
         height=600,
@@ -924,6 +938,7 @@ def main():
         st.subheader("Year-over-Year Cumulative Comparison")
         yoy_fig = create_yearly_cumulative_comparison(
             aggregates['filtered_df'],
+            timeline_freq,
             analysis_type
         )
         st.plotly_chart(yoy_fig, use_container_width=True)
