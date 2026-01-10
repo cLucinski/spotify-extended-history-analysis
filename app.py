@@ -494,7 +494,12 @@ def create_cumulative_album_chart(df, top_albums, top_n, frequency, analysis_typ
     )
     return fig
 
-def create_yearly_cumulative_comparison(df, timeline_freq, analysis_type):
+def create_yearly_cumulative_comparison(
+    df,
+    timeline_freq,
+    analysis_type,
+    normalize=False
+):
     """Compare cumulative listening across years on a normalized timeline"""
 
     data = df.copy()
@@ -517,7 +522,7 @@ def create_yearly_cumulative_comparison(df, timeline_freq, analysis_type):
             .sum()
             .reset_index(name='value')
         )
-        y_label = 'Cumulative Hours Played'
+        base_y_label = 'Cumulative Hours Played'
         title = 'Year-over-Year Cumulative Listening (Hours)'
     else:
         grouped = (
@@ -525,12 +530,23 @@ def create_yearly_cumulative_comparison(df, timeline_freq, analysis_type):
             .size()
             .reset_index(name='value')
         )
-        y_label = 'Cumulative Plays'
+        base_y_label = 'Cumulative Plays'
         title = 'Year-over-Year Cumulative Listening (Plays)'
 
     # Sort and cumulative sum per year
     grouped = grouped.sort_values(['year', 'time_index'])
     grouped['cumulative'] = grouped.groupby('year')['value'].cumsum()
+
+    if normalize:
+        # Normalize to percent of final year total
+        grouped['final_total'] = grouped.groupby('year')['cumulative'].transform('max')
+        grouped['cumulative'] = (
+            grouped['cumulative'] / grouped['final_total'] * 100
+        )
+        y_label = '% of Year Total'
+        title += ' — Normalized'
+    else:
+        y_label = base_y_label
 
     fig = px.line(
         grouped,
@@ -545,7 +561,6 @@ def create_yearly_cumulative_comparison(df, timeline_freq, analysis_type):
         }
     )
 
-    # Month labels if monthly
     if timeline_freq == 'Monthly':
         fig.update_xaxes(
             tickmode='array',
@@ -936,10 +951,17 @@ def main():
 
         # Year-over-Year comparison
         st.subheader("Year-over-Year Cumulative Comparison")
+
+        normalize_yoy = st.checkbox(
+            "Normalize Year-over-Year to % of Year Total",
+            help="Compare how quickly listening accumulated within each year"
+        )
+
         yoy_fig = create_yearly_cumulative_comparison(
             aggregates['filtered_df'],
             timeline_freq,
-            analysis_type
+            analysis_type,
+            normalize_yoy
         )
         st.plotly_chart(yoy_fig, use_container_width=True)
 
