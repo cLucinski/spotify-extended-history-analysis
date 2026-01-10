@@ -211,9 +211,10 @@ def create_top_albums_chart(aggregates, top_n, analysis_type):
     
     return fig
 
-#TODO: Proper labels
-#TODO: Improve hover info
-#TODO: Create an individual song/artist/album analysis page
+# TODO: Highlight load button when slider is clicked
+# TODO: Proper labels
+# TODO: Improve hover info
+# TODO: Create an individual song/artist/album analysis page
 
 def create_cumulative_timeline_chart(aggregates, frequency, analysis_type):
     """Create cumulative timeline chart based on selected frequency and analysis type"""
@@ -524,7 +525,7 @@ def create_artist_timeline_chart(df, top_artists, top_n, frequency):
 # DATA PROCESSING FUNCTIONS
 # ============================================================================
 
-#TODO: Figure out timezone stuff
+# TODO: Figure out timezone stuff
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_and_process_chunk(uploaded_file, min_seconds=30):
@@ -678,17 +679,22 @@ def clear_cache_and_reload():
 
 def main():
     st.title("🎵 Spotify Listening History Analyzer")
-    
+
     # File upload section
     st.sidebar.header("1. Upload Your Data")
-    
+
     uploaded_files = st.sidebar.file_uploader(
         "Select Spotify JSON files",
         type=['json'],
         accept_multiple_files=True,
         help="Upload all your Streaming_History_Audio_*.json files"
     )
-    
+
+    current_files_signature = (
+        tuple((f.name, f.size) for f in uploaded_files)
+        if uploaded_files else None
+    )
+
     # Add minimum seconds filter in sidebar
     st.sidebar.header("2. Data Filters")
     min_seconds = st.sidebar.slider(
@@ -698,27 +704,47 @@ def main():
         value=30,
         help="Filter out tracks played for less than this many seconds"
     )
-    
+
+    # Mark data stale if inputs changed
+    if (
+        st.session_state.last_uploaded_files != current_files_signature
+        or st.session_state.last_min_seconds != min_seconds
+    ):
+        st.session_state.data_stale = True
+
+
+
     if uploaded_files:
         total_size = sum(file.size for file in uploaded_files) / (1024 * 1024)
         st.sidebar.info(f"Selected {len(uploaded_files)} files ({total_size:.1f} MB)")
-        
-        if st.sidebar.button("Load and Process Data", type="primary"):
+
+        load_button = st.sidebar.button(
+            "Load and Process Data",
+            type="primary" if st.session_state.data_stale else "secondary"
+        )
+
+        if load_button:
             with st.spinner("Loading and processing your Spotify data..."):
-                # Pass min_seconds to the loading function
                 df = load_data_optimized(uploaded_files, min_seconds)
-            
+
             if df.empty:
                 st.error("No data could be loaded. Please check your files.")
                 return
-            
+
             st.session_state.df = df
             st.session_state.data_loaded = True
             st.session_state.min_seconds = min_seconds
-            
+
+            # Persist comparison values
+            st.session_state.last_uploaded_files = current_files_signature
+            st.session_state.last_min_seconds = min_seconds
+            st.session_state.data_stale = False
+
+            st.rerun()
+
             # Show filtering info
             st.success(f"✅ Successfully loaded {len(df):,} listening records (≥{min_seconds}s plays)!")
-            
+
             # Quick summary
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -727,7 +753,7 @@ def main():
                 st.metric("Total Plays", f"{len(df):,}")
             with col3:
                 st.metric("Unique Artists", f"{df['master_metadata_album_artist_name'].nunique():,}")
-    
+
     # Check if data is loaded
     if not st.session_state.get('data_loaded', False):
         st.info("""
@@ -738,30 +764,40 @@ def main():
         4. **Click "Load and Process Data"** to begin analysis
         """)
         return
-    
+
+    # Detect changes in uploaded files
+    current_files_signature = (
+        tuple((f.name, f.size) for f in uploaded_files) if uploaded_files else None
+    )
+
+    if (st.session_state.last_uploaded_files != current_files_signature
+        or st.session_state.last_min_seconds != min_seconds
+    ):
+        st.session_state.data_stale = True
+
     # Get data from session state
     df = st.session_state.df
-    
+
     # Filters sidebar
     st.sidebar.header("2. Analysis Filters")
-    
+
     min_date = df['date'].min()
     max_date = df['date'].max()
-    
+
     date_range = st.sidebar.date_input(
         "Date Range",
         value=[min_date, max_date],
         min_value=min_date,
         max_value=max_date
     )
-    
+
     all_artists = df['master_metadata_album_artist_name'].unique()
     selected_artists = st.sidebar.multiselect(
         "Filter by Artists",
         options=sorted(all_artists),
         help="Select specific artists or leave empty for all"
     )
-    
+
     # Analysis parameters
     st.sidebar.header("3. Chart Settings")
     top_n = st.sidebar.slider("Number of Top Items", 5, 50, 15)
@@ -772,36 +808,36 @@ def main():
         ['Number of Plays', 'Total Playtime'],
         help="Show charts based on play count or total time played"
     )
-    
+
     # Clear cache button
     st.sidebar.header("4. System")
     if st.sidebar.button("Clear Cache & Reload"):
         clear_cache_and_reload()
-    
+
     # Get min_seconds from session state
     current_min_seconds = st.session_state.get('min_seconds', 30)
-    
+
     # Precompute aggregates
     aggregates = precompute_aggregates(
         df, 
         date_range, 
         selected_artists if selected_artists else None,
         current_min_seconds)
-    
+
     # ============================================================================
     # CHART DISPLAY SECTION
     # ============================================================================
-    
+
     # Display charts in tabs
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Timeline", "🎤 Top Artists", "🎵 Top Songs", "💽 Top Albums", "👨‍🎤 Artist Timeline", "📋 Summary"
     ])
-    
+
     with tab1:
         st.subheader("Listening Timeline")
         timeline_fig = create_timeline_chart(aggregates, timeline_freq, analysis_type)
         st.plotly_chart(timeline_fig, use_container_width=True)
-        
+
         # Update stats based on analysis type
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -811,7 +847,7 @@ def main():
             else:
                 total_value = len(aggregates['filtered_df'])
                 st.metric("Total Plays", f"{total_value:,}")
-        
+
         with col2:
             if analysis_type == 'Total Playtime':
                 avg_value = aggregates['daily_listens']['total_hours'].mean()
@@ -819,7 +855,7 @@ def main():
             else:
                 avg_value = aggregates['daily_listens']['count'].mean()
                 st.metric("Average Plays Per Day", f"{avg_value:.1f}")
-        
+
         with col3:
             if analysis_type == 'Total Playtime':
                 peak_data = aggregates['daily_listens'].loc[aggregates['daily_listens']['total_hours'].idxmax()]
@@ -827,7 +863,7 @@ def main():
             else:
                 peak_data = aggregates['daily_listens'].loc[aggregates['daily_listens']['count'].idxmax()]
                 st.metric("Peak Listening Day", f"{peak_data['count']} plays")
-        
+
         # Cumulative overall timeline
         cumulative_fig = create_cumulative_timeline_chart(aggregates, timeline_freq, analysis_type)
         st.plotly_chart(cumulative_fig, use_container_width=True)
@@ -847,7 +883,7 @@ def main():
             analysis_type
         )
         st.plotly_chart(artist_cumulative_fig, use_container_width=True)
-        
+
         # Artist statistics
         col1, col2 = st.columns(2)
         with col1:
@@ -859,7 +895,7 @@ def main():
                 top_artist = aggregates['top_artists_count'].index[0]
                 top_artist_value = aggregates['top_artists_count'].iloc[0]
                 st.metric("Top Artist", f"{top_artist} ({top_artist_value:,} plays)")
-        
+
         with col2:
             unique_artists = aggregates['filtered_df']['master_metadata_album_artist_name'].nunique()
             st.metric("Unique Artists", f"{unique_artists:,}")
@@ -879,7 +915,7 @@ def main():
             analysis_type
         )
         st.plotly_chart(song_cumulative_fig, use_container_width=True)
-    
+
     with tab4:
         st.subheader(f"Top {top_n} Albums")
         albums_fig = create_top_albums_chart(aggregates, top_n, analysis_type)
@@ -905,23 +941,23 @@ def main():
             timeline_freq
         )
         st.plotly_chart(artist_timeline_fig, use_container_width=True)
-    
+
     with tab6:
         st.subheader("Data Summary")
-        
+
         col1, col2 = st.columns(2)
-        
+
         with col1:
             st.write("**Filter Summary**")
             st.metric("Total Plays in Filter", f"{len(aggregates['filtered_df']):,}")
-            
+
             # ADD THIS LINE for Total Playtime:
             total_hours = aggregates['filtered_df']['hours_played'].sum()
             st.metric("Total Playtime in Filter", f"{total_hours:.1f} hours")
-            
+
             st.metric("Date Range", f"{aggregates['filtered_df']['date'].min()} to {aggregates['filtered_df']['date'].max()}")
             st.metric("Filtered Artists", f"{aggregates['filtered_df']['master_metadata_album_artist_name'].nunique():,}")
-        
+
         with col2:
             st.write("**Overall Statistics**")
             st.metric("Total Listening Days", f"{aggregates['daily_listens']['date'].nunique():,}")
@@ -933,6 +969,14 @@ if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
 if 'df' not in st.session_state:
     st.session_state.df = None
+
+if 'data_stale' not in st.session_state:
+    st.session_state.data_stale = True
+if 'last_min_seconds' not in st.session_state:
+    st.session_state.last_min_seconds = None
+if 'last_uploaded_files' not in st.session_state:
+    st.session_state.last_uploaded_files = None
+
 
 if __name__ == "__main__":
     main()
