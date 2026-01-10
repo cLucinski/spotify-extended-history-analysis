@@ -211,7 +211,6 @@ def create_top_albums_chart(aggregates, top_n, analysis_type):
     
     return fig
 
-# TODO: Highlight load button when slider is clicked
 # TODO: Proper labels
 # TODO: Improve hover info
 # TODO: Create an individual song/artist/album analysis page
@@ -493,6 +492,59 @@ def create_cumulative_album_chart(df, top_albums, top_n, frequency, analysis_typ
             traceorder='normal'
         )
     )
+    return fig
+
+def create_yearly_cumulative_comparison(df, analysis_type):
+    """Compare cumulative listening across years on a single-year timeline"""
+
+    data = df.copy()
+
+    # Extract year and day-of-year
+    data['year'] = data['date_dt'].dt.year
+    data['day_of_year'] = data['date_dt'].dt.dayofyear
+
+    # Remove Feb 29 to align all years cleanly
+    data = data[data['day_of_year'] <= 365]
+
+    if analysis_type == 'Total Playtime':
+        daily = (
+            data.groupby(['year', 'day_of_year'])['hours_played']
+            .sum()
+            .reset_index(name='value')
+        )
+        y_label = 'Cumulative Hours Played'
+        title = 'Year-over-Year Cumulative Listening (Hours)'
+    else:
+        daily = (
+            data.groupby(['year', 'day_of_year'])
+            .size()
+            .reset_index(name='value')
+        )
+        y_label = 'Cumulative Plays'
+        title = 'Year-over-Year Cumulative Listening (Plays)'
+
+    # Sort and compute cumulative sum per year
+    daily = daily.sort_values(['year', 'day_of_year'])
+    daily['cumulative'] = daily.groupby('year')['value'].cumsum()
+
+    fig = px.line(
+        daily,
+        x='day_of_year',
+        y='cumulative',
+        color='year',
+        title=title,
+        labels={
+            'day_of_year': 'Day of Year',
+            'cumulative': y_label,
+            'year': 'Year'
+        }
+    )
+
+    fig.update_layout(
+        height=600,
+        hovermode='x unified'
+    )
+
     return fig
 
 def create_artist_timeline_chart(df, top_artists, top_n, frequency):
@@ -867,6 +919,14 @@ def main():
         # Cumulative overall timeline
         cumulative_fig = create_cumulative_timeline_chart(aggregates, timeline_freq, analysis_type)
         st.plotly_chart(cumulative_fig, use_container_width=True)
+
+        # Year-over-Year comparison
+        st.subheader("Year-over-Year Cumulative Comparison")
+        yoy_fig = create_yearly_cumulative_comparison(
+            aggregates['filtered_df'],
+            analysis_type
+        )
+        st.plotly_chart(yoy_fig, use_container_width=True)
 
     with tab2:
         st.subheader(f"Top {top_n} Artists")
