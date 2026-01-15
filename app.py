@@ -539,7 +539,74 @@ def create_cumulative_album_chart(df, top_albums, top_n, frequency, analysis_typ
     )
     return fig
 
-def create_cumulative_podcasts_chart(podcast_df: pd.DataFrame, timeline_freq: str):
+def create_cumulative_podcasts_chart(
+    podcast_df: pd.DataFrame,
+    top_n: int,
+    timeline_freq: str
+):
+    if podcast_df.empty:
+        return None
+
+    df = podcast_df.copy()
+
+    # Compute total listening per podcast (descending)
+    podcast_totals = (
+        df.groupby('episode_show_name')['hours_played']
+        .sum()
+        .sort_values(ascending=False)
+    )
+
+    top_podcasts = podcast_totals.head(top_n).index.tolist()
+
+    df = df[df['episode_show_name'].isin(top_podcasts)]
+
+    # Time bucketing
+    if timeline_freq == "Daily":
+        df['period'] = df['date_dt'].dt.date
+    elif timeline_freq == "Weekly":
+        df['period'] = df['date_dt'].dt.to_period('W').dt.start_time
+    elif timeline_freq == "Monthly":
+        df['period'] = df['date_dt'].dt.to_period('M').dt.start_time
+
+    # Aggregate per podcast per period
+    grouped = (
+        df.groupby(['episode_show_name', 'period'])['hours_played']
+        .sum()
+        .reset_index()
+        .sort_values('period')
+    )
+
+    # Compute cumulative sum per podcast
+    grouped['cumulative_hours'] = (
+        grouped
+        .groupby('episode_show_name')['hours_played']
+        .cumsum()
+    )
+
+    fig = px.line(
+        grouped,
+        x='period',
+        y='cumulative_hours',
+        color='episode_show_name',
+        title=f"Cumulative Podcast Listening — Top {top_n} Podcasts",
+        labels={
+            'period': 'Date',
+            'cumulative_hours': 'Cumulative Hours',
+            'episode_show_name': 'Podcast'
+        },
+        category_orders={
+            'episode_show_name': top_podcasts
+        }
+    )
+
+    fig.update_layout(
+        height=600
+    )
+
+    return fig
+
+
+def create_cumulative_total_podcasts_chart(podcast_df: pd.DataFrame, timeline_freq: str):
     if podcast_df.empty:
         return None
 
@@ -1219,7 +1286,7 @@ def main():
                 )
 
             st.subheader("Cumulative Podcast Listening")
-            cum_fig = create_cumulative_podcasts_chart(
+            cum_fig = create_cumulative_total_podcasts_chart(
                 podcast_data['df'],
                 timeline_freq
             )
@@ -1233,6 +1300,14 @@ def main():
             )
             if top_fig:
                 st.plotly_chart(top_fig, use_container_width=True)
+
+            cum_podcast_fig = create_cumulative_podcasts_chart(
+                podcast_data['df'],
+                top_n=top_n,
+                timeline_freq=timeline_freq
+            )
+            if cum_podcast_fig:
+                st.plotly_chart(cum_podcast_fig, use_container_width=True)
 
     with tab7:
         st.subheader("Data Summary")
