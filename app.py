@@ -91,6 +91,7 @@ def create_top_artists_chart(aggregates, top_n, analysis_type):
     fig.update_layout(
         yaxis={'categoryorder': 'total ascending'},
         showlegend=False,
+        coloraxis_showscale=False,
         height=600,
         # Add grid lines for better readability
         xaxis=dict(
@@ -100,12 +101,12 @@ def create_top_artists_chart(aggregates, top_n, analysis_type):
         )
     )
     
-    # Customize color scale to make ranking more visible
-    fig.update_coloraxes(
-        # colorbar_title="Rank",
-        # colorscale="plasma_r",  # Dark colors for lower ranks, bright for top ranks
-        showscale=False
-    )
+    # # Customize color scale to make ranking more visible
+    # fig.update_coloraxes(
+    #     # colorbar_title="Rank",
+    #     # colorscale="plasma_r",  # Dark colors for lower ranks, bright for top ranks
+    #     showscale=False
+    # )
     
     return fig
 
@@ -141,6 +142,7 @@ def create_top_songs_chart(aggregates, top_n, analysis_type):
     fig.update_layout(
         yaxis={'categoryorder': 'total ascending'},
         showlegend=False,
+        coloraxis_showscale=False,
         height=600,
         # Add grid lines for better readability
         xaxis=dict(
@@ -151,13 +153,15 @@ def create_top_songs_chart(aggregates, top_n, analysis_type):
     )
     
     # Customize color scale
-    fig.update_coloraxes(
-        # colorbar_title="Rank",
-        # colorscale="plasma_r",
-        showscale=False
-    )
+    # fig.update_coloraxes(
+    #     # colorbar_title="Rank",
+    #     # colorscale="plasma_r",
+    #     showscale=False
+    # )
     
     return fig
+
+#TODO: drop legend uglyyyy
 
 def create_top_albums_chart(aggregates, top_n, analysis_type):
     """Create horizontal bar chart for top albums with rank-based coloring"""
@@ -193,6 +197,7 @@ def create_top_albums_chart(aggregates, top_n, analysis_type):
     fig.update_layout(
         yaxis={'categoryorder': 'total ascending'},
         showlegend=False,
+        coloraxis_showscale=False,
         height=600,
         # Add grid lines for better readability
         xaxis=dict(
@@ -202,13 +207,53 @@ def create_top_albums_chart(aggregates, top_n, analysis_type):
         )
     )
     
-    # Customize color scale to make ranking more visible
-    fig.update_coloraxes(
-        # colorbar_title="Rank",
-        # colorscale="plasma_r",
-        showscale=False
+    return fig
+
+def create_top_podcasts_chart(top_shows: pd.Series, top_n: int = 20):
+    if top_shows.empty:
+        return None
+
+    df = (
+        top_shows
+        .head(top_n)
+        .reset_index()
+        .rename(columns={
+            'episode_show_name': 'Podcast',
+            0: 'hours_played'
+        })
     )
-    
+
+    df['rank'] = df['hours_played'].rank(method='min', ascending=False).astype(int)
+
+    fig = px.bar(
+        df,
+        x='hours_played',
+        y='Podcast',
+        color='rank',
+        color_continuous_scale='plasma_r',
+        orientation='h',
+        title=f"Top {min(top_n, len(top_shows))} Podcasts by Listening Time",
+        labels={
+            'hours_played': 'Hours Played'
+        }
+    )
+
+    fig.update_layout(
+        yaxis={'categoryorder': 'total ascending'},
+        showlegend=False,
+        coloraxis_showscale=False,
+        height=600,
+        # Add grid lines for better readability
+        xaxis=dict(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='lightgray'
+        )
+    )
+
+    # Remove colour scale
+    # fig.update_coloraxes(showscale=False)
+
     return fig
 
 # TODO: Proper labels
@@ -494,6 +539,46 @@ def create_cumulative_album_chart(df, top_albums, top_n, frequency, analysis_typ
     )
     return fig
 
+def create_cumulative_podcasts_chart(podcast_df: pd.DataFrame, timeline_freq: str):
+    if podcast_df.empty:
+        return None
+
+    df = podcast_df.copy()
+
+    if timeline_freq == "Daily":
+        df['period'] = df['date_dt'].dt.date
+    elif timeline_freq == "Monthly":
+        df['period'] = df['date_dt'].dt.to_period('M').dt.start_time
+
+    grouped = (
+        df.groupby('period')['hours_played']
+        .sum()
+        .reset_index()
+        .sort_values('period')
+    )
+
+    grouped['cumulative_hours'] = grouped['hours_played'].cumsum()
+
+    fig = px.line(
+        grouped,
+        x='period',
+        y='cumulative_hours',
+        title="Cumulative Podcast Listening Over Time",
+        labels={
+            'period': 'Date',
+            'cumulative_hours': 'Cumulative Hours'
+        }
+    )
+
+    fig.update_traces(mode='lines')
+
+    fig.update_layout(
+        height=400,
+        margin=dict(l=40, r=40, t=60, b=40)
+    )
+
+    return fig
+
 def create_yearly_cumulative_comparison(
     df,
     timeline_freq,
@@ -626,9 +711,14 @@ def load_and_process_chunk(uploaded_file, min_seconds=30):
         df['seconds_played'] = df['ms_played'] / 1000
         df = df[df['seconds_played'] >= min_seconds]
         
-        # Filter out podcasts
-        music_df = df[df['master_metadata_track_name'].notna()].copy()
-        return music_df
+        # Identify content type
+        df['content_type'] = np.where(
+            df['master_metadata_track_name'].notna(),
+            'Music',
+            'Podcast'
+        )
+        return df
+
     except Exception as e:
         st.error(f"Error processing {uploaded_file.name}: {str(e)}")
         return pd.DataFrame()
@@ -678,6 +768,9 @@ def load_data_optimized(uploaded_files, min_seconds=30):
 def precompute_aggregates(_df, date_range=None, artist_filter=None, min_seconds=30):
     """Precompute aggregates for both play count and playtime"""
     filtered_df = _df.copy()
+
+    # Keep music only for existing analysis
+    filtered_df = filtered_df[filtered_df['content_type'] == 'Music']
     
     # Apply minimum seconds filter
     filtered_df = filtered_df[filtered_df['ms_played'] >= (min_seconds * 1000)]
@@ -737,6 +830,48 @@ def precompute_aggregates(_df, date_range=None, artist_filter=None, min_seconds=
         'top_albums_count': top_albums_count,
         'top_albums_time': top_albums_time,
         'filtered_df': filtered_df
+    }
+
+@st.cache_data(show_spinner=False)
+def compute_podcast_aggregates(df, date_range=None, min_seconds=30):
+    """Aggregate podcast listening data"""
+
+    podcast_df = df[df['content_type'] == 'Podcast'].copy()
+
+    if podcast_df.empty:
+        return None
+
+    podcast_df = podcast_df[podcast_df['ms_played'] >= (min_seconds * 1000)]
+    podcast_df['hours_played'] = podcast_df['ms_played'] / (1000 * 60 * 60)
+
+    if date_range and len(date_range) == 2:
+        start_date, end_date = date_range
+        podcast_df = podcast_df[
+            (podcast_df['date_dt'] >= pd.to_datetime(start_date)) &
+            (podcast_df['date_dt'] <= pd.to_datetime(end_date))
+        ]
+
+    # Daily aggregates
+    daily = (
+        podcast_df.groupby('date_dt')
+        .agg(
+            count=('ms_played', 'size'),
+            total_hours=('hours_played', 'sum')
+        )
+        .reset_index()
+    )
+
+    # Top podcast shows (by playtime)
+    top_shows = (
+        podcast_df.groupby('episode_show_name')['hours_played']
+        .sum()
+        .sort_values(ascending=False)
+    )
+
+    return {
+        'df': podcast_df,
+        'daily': daily,
+        'top_shows': top_shows,
     }
 
 def clear_cache_and_reload():
@@ -872,7 +1007,17 @@ def main():
         max_value=max_date
     )
 
-    all_artists = df['master_metadata_album_artist_name'].unique()
+    all_artists = (
+        df.loc[
+            (df['content_type'] == 'Music') &
+            (df['master_metadata_album_artist_name'].notna()),
+            'master_metadata_album_artist_name'
+        ]
+        .unique()
+    )
+    if len(all_artists) == 0:
+        st.sidebar.warning("No music artists found in current filter.")
+
     selected_artists = st.sidebar.multiselect(
         "Filter by Artists",
         options=sorted(all_artists),
@@ -910,8 +1055,10 @@ def main():
     # ============================================================================
 
     # Display charts in tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📊 Timeline", "🎤 Top Artists", "🎵 Top Songs", "💽 Top Albums", "👨‍🎤 Artist Timeline", "📋 Summary"
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "📊 Timeline", "🎤 Top Artists", "🎵 Top Songs",
+        "💽 Top Albums", "👨‍🎤 Artist Timeline",
+        "🎙 Podcasts", "📋 Summary"
     ])
 
     with tab1:
@@ -1040,6 +1187,54 @@ def main():
         st.plotly_chart(artist_timeline_fig, use_container_width=True)
 
     with tab6:
+        st.subheader("🎙 Podcast Listening")
+
+        podcast_data = compute_podcast_aggregates(
+            st.session_state.df,
+            date_range,
+            current_min_seconds
+        )
+
+        if not podcast_data:
+            st.info("No podcast listening data found.")
+        else:
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric(
+                    "Total Podcast Plays",
+                    f"{len(podcast_data['df']):,}"
+                )
+
+            with col2:
+                st.metric(
+                    "Total Listening Time",
+                    f"{podcast_data['df']['hours_played'].sum():.1f} hrs"
+                )
+
+            with col3:
+                st.metric(
+                    "Unique Podcasts",
+                    f"{podcast_data['df']['episode_show_name'].nunique():,}"
+                )
+
+            st.subheader("Cumulative Podcast Listening")
+            cum_fig = create_cumulative_podcasts_chart(
+                podcast_data['df'],
+                timeline_freq
+            )
+            if cum_fig:
+                st.plotly_chart(cum_fig, use_container_width=True)
+
+            st.subheader("Top Podcasts")
+            top_fig = create_top_podcasts_chart(
+                podcast_data['top_shows'],
+                top_n=top_n
+            )
+            if top_fig:
+                st.plotly_chart(top_fig, use_container_width=True)
+
+    with tab7:
         st.subheader("Data Summary")
 
         col1, col2 = st.columns(2)
