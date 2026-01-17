@@ -161,7 +161,6 @@ def create_top_songs_chart(aggregates, top_n, analysis_type):
     
     return fig
 
-#TODO: drop legend uglyyyy
 
 def create_top_albums_chart(aggregates, top_n, analysis_type):
     """Create horizontal bar chart for top albums with rank-based coloring"""
@@ -256,7 +255,7 @@ def create_top_podcasts_chart(top_shows: pd.Series, top_n: int = 20):
 
     return fig
 
-# TODO: Proper labels
+# TODO: Fix hover labels
 # TODO: Improve hover info
 # TODO: Create an individual song/artist/album analysis page
 
@@ -378,6 +377,9 @@ def create_cumulative_artist_chart(df, top_artists, top_n, frequency, analysis_t
         y='cumulative',
         color='master_metadata_album_artist_name',
         title=f'Cumulative Listening for Top {top_n} Artists',
+        labels={'date_dt': "Date", 
+                'cumulative': 'Cumulative Hours Played' if analysis_type == 'Total Playtime' else 'Cumulative Number of Plays',
+                'master_metadata_album_artist_name': 'Artist'},
         category_orders={"master_metadata_album_artist_name": legend_order}
     )
     
@@ -455,6 +457,9 @@ def create_cumulative_song_chart(df, top_songs_data, top_n, frequency, analysis_
         y='cumulative',
         color='song_artist',
         title=f'Cumulative Listening for Top {top_n} Songs',
+        labels={'date_dt': "Date", 
+                'cumulative': 'Cumulative Hours Played' if analysis_type == 'Total Playtime' else 'Cumulative Number of Plays',
+                'song_artist': 'Song - Artist'},
         category_orders={"song_artist": legend_order}
     )
     
@@ -527,6 +532,9 @@ def create_cumulative_album_chart(df, top_albums, top_n, frequency, analysis_typ
         y='cumulative',
         color='master_metadata_album_album_name',
         title=f'Cumulative Listening for Top {top_n} Albums',
+        labels={'date_dt': "Date", 
+                'cumulative': 'Cumulative Hours Played' if analysis_type == 'Total Playtime' else 'Cumulative Number of Plays',
+                'master_metadata_album_album_name': 'Album'},
         category_orders={"master_metadata_album_album_name": legend_order}
     )
     
