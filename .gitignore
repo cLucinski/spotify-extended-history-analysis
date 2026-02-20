@@ -165,3 +165,4 @@ test.json
 *.pdf
 *.txt
 data/*
+.streamlit/secrets.toml
