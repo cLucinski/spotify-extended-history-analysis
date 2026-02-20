@@ -17,6 +17,7 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import secrets
 import hashlib
+import os
 
 # ============================================================================
 # SPOTIFY API AUTHENTICATION
@@ -386,15 +387,15 @@ def batch_search_album_covers(sp, albums_df: pd.DataFrame,
     progress_bar.empty()
     status_text.empty()
     
-    if successful > 0:
-        st.success(f"Found covers for {successful}/{total} albums ({successful/total*100:.1f}%)")
-        if uri_success > 0:
-            st.info(f"📌 {uri_success} albums found using track URIs (most accurate)")
+    # if successful > 0:
+    #     st.success(f"Found covers for {successful}/{total} albums ({successful/total*100:.1f}%)")
+    #     if uri_success > 0:
+    #         st.info(f"📌 {uri_success} albums found using track URIs (most accurate)")
     
     return results_df
 
 # ============================================================================
-# IMAGE DOWNLOAD AND PROCESSING (Same as before)
+# IMAGE DOWNLOAD AND PROCESSING
 # ============================================================================
 
 @st.cache_data(ttl=86400)  # Cache for 24 hours
@@ -421,20 +422,26 @@ def get_image_base64(img: Image.Image, format: str = 'JPEG') -> str:
     img_str = base64.b64encode(buffered.getvalue()).decode()
     return img_str
 
-# ============================================================================
-# STREAMLIT DISPLAY FUNCTIONS (Enhanced with clickable links and default image)
-# ============================================================================
-
 def get_default_image_base64():
-    """Return base64 encoded default music note image"""
-    # Simple SVG music note as fallback (you can replace with actual image file)
-    svg = '''
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="150" height="150">
-        <circle cx="12" cy="12" r="12" fill="#f0f0f0"/>
-        <path d="M15 6V8H11V15C11 16.66 9.66 18 8 18C6.34 18 5 16.66 5 15C5 13.34 6.34 12 8 12C8.34 12 8.68 12.05 9 12.12V6H15ZM14 9H19V11H17V14C17 15.66 15.66 17 14 17C12.34 17 11 15.66 11 14C11 12.34 12.34 11 14 11C14.34 11 14.68 11.05 15 11.12V9H14Z" fill="#666666"/>
-    </svg>
-    '''
-    return base64.b64encode(svg.encode()).decode()
+    """Load the default music note PNG image and return as base64"""
+    default_image_path = "assets/music-note-icon-grey.png"
+    
+    try:
+        # Check if the file exists
+        if os.path.exists(default_image_path):
+            with open(default_image_path, "rb") as img_file:
+                img_bytes = img_file.read()
+                return base64.b64encode(img_bytes).decode()
+        else:
+            return None
+    except Exception as e:
+        print(f"Error loading default image: {e}")
+        # Return a simple data URI as last resort
+        return ""
+
+# ============================================================================
+# STREAMLIT DISPLAY FUNCTIONS
+# ============================================================================
 
 def display_album_grid(albums_df: pd.DataFrame, 
                        cover_col: str = 'cover_url',
@@ -444,7 +451,7 @@ def display_album_grid(albums_df: pd.DataFrame,
                        url_col: Optional[str] = 'spotify_album_url',
                        cols: int = 4):
     """
-    Display albums in a grid with their cover images
+    Display albums in a grid with their cover images - shows full album and artist names
     """
     if len(albums_df) == 0:
         st.warning("No albums to display")
@@ -482,19 +489,29 @@ def display_album_grid(albums_df: pd.DataFrame,
                         except Exception as e:
                             # Show default image on error
                             st.markdown(
-                                f"<img src='data:image/svg+xml;base64,{default_img_base64}' style='width:100%; border-radius:8px;'>",
+                                f"<img src='data:image/png;base64,{default_img_base64}' style='width:100%; border-radius:8px;'>",
                                 unsafe_allow_html=True
                             )
                     else:
                         # Show default image
                         st.markdown(
-                            f"<img src='data:image/svg+xml;base64,{default_img_base64}' style='width:100%; border-radius:8px;'>",
+                            f"<img src='data:image/png;base64,{default_img_base64}' style='width:100%; border-radius:8px;'>",
                             unsafe_allow_html=True
                         )
                     
-                    # Display album info
-                    st.markdown(f"**{str(album[title_col])[:30]}**")
-                    st.caption(f"{str(album[subtitle_col])[:20]}")
+                    # Display album info with full names
+                    # Use word-wrap to handle long names
+                    album_title = str(album[title_col])
+                    artist_name = str(album[subtitle_col])
+                    
+                    st.markdown(
+                        f"<div style='word-wrap: break-word;'><strong>{album_title}</strong></div>",
+                        unsafe_allow_html=True
+                    )
+                    st.markdown(
+                        f"<div style='word-wrap: break-word; color: #666; font-size: 0.9em;'>{artist_name}</div>",
+                        unsafe_allow_html=True
+                    )
                     
                     if plays_col and plays_col in album:
                         plays_value = album[plays_col]
@@ -531,14 +548,14 @@ def display_album_carousel(albums_df: pd.DataFrame,
                 img_html = f"<img src='{album[cover_col]}' style='width:150px; height:150px; object-fit:cover; border-radius:8px;'>"
             except Exception:
                 # Fall back to default
-                img_html = f"<img src='data:image/svg+xml;base64,{default_img_base64}' style='width:150px; height:150px; object-fit:cover; border-radius:8px;'>"
+                img_html = f"<img src='data:image/png;base64,{default_img_base64}' style='width:150px; height:150px; object-fit:cover; border-radius:8px;'>"
         else:
             # Default image
-            img_html = f"<img src='data:image/svg+xml;base64,{default_img_base64}' style='width:150px; height:150px; object-fit:cover; border-radius:8px;'>"
+            img_html = f"<img src='data:image/png;base64,{default_img_base64}' style='width:150px; height:150px; object-fit:cover; border-radius:8px;'>"
         
         # Build the album info text
-        title_text = str(album[title_col])[:25]
-        subtitle_text = str(album[subtitle_col])[:20]
+        title_text = str(album[title_col])
+        subtitle_text = str(album[subtitle_col])
         
         plays_text = ""
         if plays_col and plays_col in album and pd.notna(album[plays_col]):
@@ -551,10 +568,10 @@ def display_album_carousel(albums_df: pd.DataFrame,
                 <a href="{album[url_col]}" target="_blank">
                     {img_html}
                 </a>
-                <div style="font-size: 12px; margin-top: 5px; white-space: normal; word-wrap: break-word;">
-                    <strong>{title_text}</strong><br>
-                    <span style="color: #666;">{subtitle_text}</span><br>
-                    <span style="color: #999; font-size: 11px;">{plays_text}</span>
+                <div style="font-size: 12px; margin-top: 5px; width: 150px;">
+                    <div style="word-wrap: break-word; white-space: normal;"><strong>{title_text}</strong></div>
+                    <div style="word-wrap: break-word; white-space: normal; color: #666;">{subtitle_text}</div>
+                    <div style="color: #999; font-size: 11px; white-space: normal;">{plays_text}</div>
                 </div>
             </div>
             '''
@@ -562,10 +579,10 @@ def display_album_carousel(albums_df: pd.DataFrame,
             item_html = f'''
             <div style="display: inline-block; margin-right: 15px; text-align: center; width: 150px; vertical-align: top;">
                 {img_html}
-                <div style="font-size: 12px; margin-top: 5px; white-space: normal; word-wrap: break-word;">
-                    <strong>{title_text}</strong><br>
-                    <span style="color: #666;">{subtitle_text}</span><br>
-                    <span style="color: #999; font-size: 11px;">{plays_text}</span>
+                <div style="font-size: 12px; margin-top: 5px; width: 150px;">
+                    <div style="word-wrap: break-word; white-space: normal;"><strong>{title_text}</strong></div>
+                    <div style="word-wrap: break-word; white-space: normal; color: #666;">{subtitle_text}</div>
+                    <div style="color: #999; font-size: 11px; white-space: normal;">{plays_text}</div>
                 </div>
             </div>
             '''
