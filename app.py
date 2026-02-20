@@ -1345,33 +1345,17 @@ def main():
     with tab8:
         st.subheader("🎨 Album Cover Gallery")
         
-        # Instructions for Spotify API setup
-        with st.expander("ℹ️ How to set up Spotify API access"):
-            st.markdown("""
-            1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-            2. Click "Create App"
-            3. Set any name and description
-            4. Add `http://localhost:8501` to Redirect URIs
-            5. Copy Client ID and Client Secret
-            6. Add them to `.streamlit/secrets.toml` file:
-            ```toml
-            SPOTIFY_CLIENT_ID = "your_client_id"
-            SPOTIFY_CLIENT_SECRET = "your_client_secret"
-            ```
-            """)
+        # Show setup instructions
+        from spotify_api import show_auth_instructions
+        show_auth_instructions()
         
-        # Initialize Spotify client
-        sp = get_spotify_client()
+        # Initialize Spotify client (using Client Credentials for public data)
+        sp = get_spotify_client(use_oauth=False)
         
         if sp is None:
-            st.error("""
-            ⚠️ Spotify API credentials not configured.
-            
-            Please set up your credentials in `.streamlit/secrets.toml` to enable album art.
-            See the instructions above.
-            """)
+            st.error("⚠️ Spotify API credentials not configured or invalid.")
         else:
-            st.success("✅ Spotify API connected!")
+            st.success("✅ Spotify API connected (public data mode)!")
             
             # Get top albums for cover search
             cover_top_n = st.slider(
@@ -1385,49 +1369,66 @@ def main():
             # Get albums data
             albums_df = get_albums_for_cover_search(aggregates, top_n=cover_top_n)
             
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                search_button = st.button("🔍 Search for Album Covers", type="primary")
-            
-            with col2:
-                display_mode = st.radio("Display Mode", ["Grid", "Carousel"])
-            
-            if search_button:
-                with st.spinner("Searching Spotify for album covers..."):
-                    albums_with_covers = batch_search_album_covers(
-                        sp, 
-                        albums_df,
-                        artist_col='artist',
-                        album_col='album',
-                        batch_size=5
-                    )
-                    st.session_state.albums_with_covers = albums_with_covers
-            
-            # Display results if we have them
-            if 'albums_with_covers' in st.session_state:
-                if display_mode == "Grid":
-                    display_album_grid(
-                        st.session_state.albums_with_covers,
-                        cover_col='cover_url',
-                        title_col='album',
-                        subtitle_col='artist',
-                        plays_col='plays',
-                        cols=4
-                    )
-                else:
-                    display_album_carousel(
-                        st.session_state.albums_with_covers,
-                        cover_col='cover_url',
-                        title_col='album',
-                        subtitle_col='artist',
-                        plays_col='plays',
-                        height=200
-                    )
+            if len(albums_df) == 0:
+                st.warning("No albums found in your listening history.")
+            else:
+                st.info(f"Found {len(albums_df)} unique albums to search for")
                 
-                # Show statistics
-                found_covers = st.session_state.albums_with_covers['cover_url'].notna().sum()
-                st.info(f"Found {found_covers} album covers out of {len(st.session_state.albums_with_covers)} searched")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    search_button = st.button("🔍 Search for Album Covers", type="primary")
+                
+                with col2:
+                    display_mode = st.radio("Display Mode", ["Grid", "Carousel"])
+                
+                if search_button:
+                    with st.spinner("Searching Spotify for album covers..."):
+                        albums_with_covers = batch_search_album_covers(
+                            sp, 
+                            albums_df,
+                            artist_col='artist',
+                            album_col='album',
+                            batch_size=5
+                        )
+                        st.session_state.albums_with_covers = albums_with_covers
+                
+                # Display results if we have them
+                if 'albums_with_covers' in st.session_state:
+                    if display_mode == "Grid":
+                        display_album_grid(
+                            st.session_state.albums_with_covers,
+                            cover_col='cover_url',
+                            title_col='album',
+                            subtitle_col='artist',
+                            plays_col='plays',
+                            url_col='spotify_album_url',
+                            cols=4
+                        )
+                    else:
+                        display_album_carousel(
+                            st.session_state.albums_with_covers,
+                            cover_col='cover_url',
+                            title_col='album',
+                            subtitle_col='artist',
+                            plays_col='plays',
+                            url_col='spotify_album_url',
+                            height=200
+                        )
+                    
+                    # Show statistics
+                    found_covers = st.session_state.albums_with_covers['cover_url'].notna().sum()
+                    st.info(f"Found {found_covers} album covers out of {len(st.session_state.albums_with_covers)} searched")
+                    
+                    # Add option to download results
+                    if found_covers > 0:
+                        csv = st.session_state.albums_with_covers.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download album data as CSV",
+                            data=csv,
+                            file_name="spotify_albums_with_covers.csv",
+                            mime="text/csv"
+                        )
 
 # Initialize session state variables if they don't exist
 if 'data_loaded' not in st.session_state:
