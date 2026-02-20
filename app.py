@@ -9,7 +9,8 @@ import io
 import gc
 from spotify_api import (
     get_spotify_client, batch_search_album_covers, 
-    display_album_grid, display_album_carousel, get_albums_for_cover_search
+    display_album_grid, display_album_carousel, get_albums_for_cover_search, 
+    create_album_covers_zip
 )
 
 # Configure Streamlit
@@ -1403,6 +1404,9 @@ def main():
                             batch_size=5
                         )
                         st.session_state.albums_with_covers = albums_with_covers
+                        # Clear any previously generated zip data when new search is performed
+                        if 'zip_data' in st.session_state:
+                            del st.session_state.zip_data
                 
                 # Display results if we have them
                 if 'albums_with_covers' in st.session_state:
@@ -1431,8 +1435,9 @@ def main():
                     found_covers = st.session_state.albums_with_covers['cover_url'].notna().sum()
                     st.info(f"Found {found_covers} album covers out of {len(st.session_state.albums_with_covers)} searched.")
                     
-                    # Add option to download results
+                    # Download buttons
                     if found_covers > 0:
+                        # CSV download button
                         csv = st.session_state.albums_with_covers.to_csv(index=False)
                         st.download_button(
                             label="📥 Download album data as CSV",
@@ -1440,6 +1445,30 @@ def main():
                             file_name="spotify_albums_with_covers.csv",
                             mime="text/csv"
                         )
+                        
+                        # Zip download button - only creates zip when clicked
+                        if st.button("📦 Prepare Album Covers ZIP"):
+                            with st.spinner("Downloading and packaging album covers... This may take a moment."):
+                                zip_data = create_album_covers_zip(
+                                    st.session_state.albums_with_covers,
+                                    cover_col='cover_url',
+                                    title_col='album',
+                                    artist_col='artist'
+                                )
+                                if zip_data:
+                                    st.session_state.zip_data = zip_data
+                                    st.success("✅ ZIP file ready for download!")
+                        
+                        # Show download button if zip data is prepared
+                        if 'zip_data' in st.session_state:
+                            st.download_button(
+                                label="📦 Download Album Covers ZIP",
+                                data=st.session_state.zip_data,
+                                file_name="spotify_album_covers.zip",
+                                mime="application/zip",
+                                type="primary",
+                                key="download_zip"
+                            )
 
 # Initialize session state variables if they don't exist
 if 'data_loaded' not in st.session_state:
@@ -1453,6 +1482,9 @@ if 'last_min_seconds' not in st.session_state:
     st.session_state.last_min_seconds = None
 if 'last_uploaded_files' not in st.session_state:
     st.session_state.last_uploaded_files = None
+
+if 'zip_data' in st.session_state:
+    del st.session_state.zip_data
 
 
 if __name__ == "__main__":

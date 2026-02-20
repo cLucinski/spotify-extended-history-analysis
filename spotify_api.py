@@ -18,6 +18,9 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import secrets
 import hashlib
 import os
+import zipfile
+from pathlib import Path
+import re
 
 # ============================================================================
 # SPOTIFY API AUTHENTICATION
@@ -660,3 +663,87 @@ def get_albums_for_cover_search(aggregates, top_n: int = 100, ranking_method: st
             albums_list.append(album_entry)
     
     return pd.DataFrame(albums_list)
+
+# Function for creating zip file with album images
+def create_album_covers_zip(albums_df: pd.DataFrame, 
+                           cover_col: str = 'cover_url',
+                           title_col: str = 'album',
+                           artist_col: str = 'artist') -> Optional[bytes]:
+    """
+    Download all album covers and create a zip file in memory.
+    
+    Args:
+        albums_df: DataFrame with album information and cover URLs
+        cover_col: Column name containing cover image URLs
+        title_col: Column name containing album titles
+        artist_col: Column name containing artist names
+    
+    Returns:
+        BytesIO object containing the zip file, or None if no images to download
+    """
+    # Filter to albums with covers
+    covers_df = albums_df[albums_df[cover_col].notna()]
+    
+    if len(covers_df) == 0:
+        return None
+    
+    # Create a BytesIO object to store the zip file
+    zip_buffer = BytesIO()
+    
+    # Create progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        successful = 0
+        total = len(covers_df)
+        
+        for idx, (_, album) in enumerate(covers_df.iterrows()):
+            try:
+                # Get album info
+                album_title = str(album[title_col])
+                artist_name = str(album[artist_col])
+                cover_url = album[cover_col]
+                
+                status_text.text(f"Downloading {idx+1}/{total}: {album_title}")
+                
+                # Download the image
+                response = requests.get(cover_url, timeout=10)
+                response.raise_for_status()
+                
+                # Create a safe filename
+                # Remove characters that are problematic in filenames
+                safe_album = re.sub(r'[<>:"/\\|?*]', '', album_title)
+                safe_artist = re.sub(r'[<>:"/\\|?*]', '', artist_name)
+                
+                # Truncate if too long (max 100 chars for filename)
+                if len(safe_album) > 80:
+                    safe_album = safe_album[:80]
+                if len(safe_artist) > 20:
+                    safe_artist = safe_artist[:20]
+                
+                # Create filename: "Artist - Album.jpg"
+                filename = f"{safe_artist} - {safe_album}.jpg"
+                
+                # Write to zip
+                zip_file.writestr(filename, response.content)
+                successful += 1
+                
+            except Exception as e:
+                print(f"Error downloading {album_title}: {str(e)}")
+                continue
+            
+            # Update progress
+            progress_bar.progress((idx + 1) / total)
+    
+    progress_bar.empty()
+    status_text.empty()
+    
+    if successful == 0:
+        return None
+    
+    st.success(f"Successfully downloaded {successful} album covers!")
+    
+    # Return the zip file as bytes
+    zip_buffer.seek(0)
+    return zip_buffer.getvalue()
