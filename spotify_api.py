@@ -365,11 +365,11 @@ def display_album_grid(albums_df: pd.DataFrame,
         st.warning("No cover images available")
         return
     
-    # Filter to albums with covers
-    display_df = albums_df[albums_df[cover_col].notna()].copy()
-    
+    # Use all albums, show default image for missing covers
+    display_df = albums_df.copy()
+
     if len(display_df) == 0:
-        st.warning("No album covers found")
+        st.warning("No albums to display")
         return
     
     # Create grid
@@ -396,14 +396,17 @@ def display_album_grid(albums_df: pd.DataFrame,
                                         unsafe_allow_html=True
                                     )
                                 else:
-                                    st.image(img, use_container_width=True)
+                                    st.image(img, width='stretch')
                             else:
-                                st.markdown("🎵")
+                                # Show default image
+                                st.image("assets/music-note-icon-grey.png", width='stretch')
                         except Exception as e:
                             print(f"Error displaying image: {e}")
-                            st.markdown("🎵")
+                            # Show default image
+                            st.image("assets/music-note-icon-grey.png", width='stretch')
                     else:
-                        st.markdown("🎵")
+                        # Show default image
+                        st.image("assets/music-note-icon-grey.png", width='stretch')
                     
                     # Display album info
                     st.markdown(f"**{album[title_col][:30]}**")
