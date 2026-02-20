@@ -460,6 +460,9 @@ def display_album_grid(albums_df: pd.DataFrame,
     display_df = albums_df.copy()
     default_img_base64 = get_default_image_base64()
     
+    # Determine the unit label based on the column name
+    unit_label = "plays" if plays_col == 'plays' else "hours" if plays_col == 'hours' else ""
+    
     # Create grid
     rows = len(display_df) // cols + (1 if len(display_df) % cols > 0 else 0)
     
@@ -500,7 +503,6 @@ def display_album_grid(albums_df: pd.DataFrame,
                         )
                     
                     # Display album info with full names
-                    # Use word-wrap to handle long names
                     album_title = str(album[title_col])
                     artist_name = str(album[subtitle_col])
                     
@@ -516,7 +518,8 @@ def display_album_grid(albums_df: pd.DataFrame,
                     if plays_col and plays_col in album:
                         plays_value = album[plays_col]
                         if pd.notna(plays_value):
-                            st.caption(f"🎧 {float(plays_value):.0f} plays")
+                            # Add the unit label after the number
+                            st.caption(f"🎧 {plays_value} {unit_label}")
 
 def display_album_carousel(albums_df: pd.DataFrame, 
                           cover_col: str = 'cover_url',
@@ -534,6 +537,9 @@ def display_album_carousel(albums_df: pd.DataFrame,
     if len(display_df) == 0:
         st.warning("No albums to display")
         return
+    
+    # Determine the unit label based on the column name
+    unit_label = "plays" if plays_col == 'plays' else "hours" if plays_col == 'hours' else ""
     
     # Create HTML for carousel
     carousel_items = []
@@ -559,7 +565,8 @@ def display_album_carousel(albums_df: pd.DataFrame,
         
         plays_text = ""
         if plays_col and plays_col in album and pd.notna(album[plays_col]):
-            plays_text = f"🎧 {float(album[plays_col]):.0f} plays"
+            # Add the unit label after the number
+            plays_text = f"🎧 {album[plays_col]} {unit_label}"
         
         # If there is a Spotify URL, wrap the image in a link
         if url_col and url_col in album and album[url_col] and pd.notna(album[url_col]):
@@ -602,17 +609,30 @@ def display_album_carousel(albums_df: pd.DataFrame,
 # INTEGRATION WITH MAIN APP
 # ============================================================================
 
-def get_albums_for_cover_search(aggregates, top_n: int = 100) -> pd.DataFrame:
+def get_albums_for_cover_search(aggregates, top_n: int = 100, ranking_method: str = 'Number of Plays') -> pd.DataFrame:
     """
     Extract top albums from aggregates for cover searching.
-    Now includes track URIs from the original listening data.
+    Now includes track URIs from the original listening data and supports different ranking methods.
+    
+    Args:
+        aggregates: The precomputed aggregates dictionary
+        top_n: Number of top albums to return
+        ranking_method: Either 'Number of Plays' or 'Total Playtime'
+    
+    Returns:
+        DataFrame with album information
     """
-    # Get top albums by play count
-    top_albums = aggregates['top_albums_count'].head(top_n)
+    # Get top albums based on ranking method
+    if ranking_method == 'Total Playtime':
+        top_albums = aggregates['top_albums_time'].head(top_n)
+        value_name = 'hours'
+    else:  # Default to play count
+        top_albums = aggregates['top_albums_count'].head(top_n)
+        value_name = 'plays'
     
     # Create DataFrame with artist, album, and track URI info
     albums_list = []
-    for album_name, plays in top_albums.items():
+    for album_name, value in top_albums.items():
         # Get all listens for this album to extract track URIs
         album_data = aggregates['filtered_df'][
             aggregates['filtered_df']['master_metadata_album_album_name'] == album_name
@@ -622,20 +642,21 @@ def get_albums_for_cover_search(aggregates, top_n: int = 100) -> pd.DataFrame:
             artist = album_data['master_metadata_album_artist_name'].iloc[0]
             
             # Get the most common track URI for this album (or the first one)
-            # This helps ensure a representative track URI
             track_uris = album_data['spotify_track_uri'].dropna()
             
             if len(track_uris) > 0:
-                # Get the most frequent track URI (in case there are multiple)
+                # Get the most frequent track URI
                 track_uri = track_uris.mode()[0] if len(track_uris) > 0 else track_uris.iloc[0]
             else:
                 track_uri = None
             
-            albums_list.append({
+            # Store the value with appropriate column name
+            album_entry = {
                 'album': album_name,
                 'artist': artist,
                 'track_uri': track_uri,
-                'plays': plays
-            })
+                value_name: round(value, 1) if value_name == 'hours' else int(value)  # Round hours to 1 decimal
+            }
+            albums_list.append(album_entry)
     
     return pd.DataFrame(albums_list)

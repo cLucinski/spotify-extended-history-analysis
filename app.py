@@ -1357,7 +1357,10 @@ def main():
         else:
             st.success("✅ Spotify API connected (public data mode)!")
             
-            # Get top albums for cover search
+            # Integrate option to choose between play count and playtime for album ranking
+            album_ranking_method = analysis_type
+            
+            # Get top albums for cover search based on selected method
             cover_top_n = st.slider(
                 "Number of top albums to search for",
                 min_value=10,
@@ -1366,13 +1369,20 @@ def main():
                 step=10
             )
             
-            # Get albums data
-            albums_df = get_albums_for_cover_search(aggregates, top_n=cover_top_n)
+            # Get albums data based on selected ranking method
+            with st.spinner("Preparing album list..."):
+                albums_df = get_albums_for_cover_search(aggregates, top_n=cover_top_n, ranking_method=album_ranking_method)
             
             if len(albums_df) == 0:
                 st.warning("No albums found in your listening history.")
             else:
-                st.info(f"Found {len(albums_df)} unique albums to search for")
+                # Determine which value column exists
+                if 'hours' in albums_df.columns:
+                    value_label = 'hours'
+                else:
+                    value_label = 'plays'
+                    
+                st.info(f"Found {len(albums_df)} unique albums to search for (ranked by {album_ranking_method.lower()}).")
                 
                 col1, col2 = st.columns(2)
                 
@@ -1389,6 +1399,7 @@ def main():
                             albums_df,
                             artist_col='artist',
                             album_col='album',
+                            track_uri_col='track_uri',
                             batch_size=5
                         )
                         st.session_state.albums_with_covers = albums_with_covers
@@ -1401,9 +1412,9 @@ def main():
                             cover_col='cover_url',
                             title_col='album',
                             subtitle_col='artist',
-                            plays_col='plays',
+                            plays_col=value_label,
                             url_col='spotify_album_url',
-                            cols=4
+                            cols=5
                         )
                     else:
                         display_album_carousel(
@@ -1411,14 +1422,14 @@ def main():
                             cover_col='cover_url',
                             title_col='album',
                             subtitle_col='artist',
-                            plays_col='plays',
+                            plays_col=value_label,
                             url_col='spotify_album_url',
                             height=200
                         )
                     
                     # Show statistics
                     found_covers = st.session_state.albums_with_covers['cover_url'].notna().sum()
-                    st.info(f"Found {found_covers} album covers out of {len(st.session_state.albums_with_covers)} searched")
+                    st.info(f"Found {found_covers} album covers out of {len(st.session_state.albums_with_covers)} searched.")
                     
                     # Add option to download results
                     if found_covers > 0:
