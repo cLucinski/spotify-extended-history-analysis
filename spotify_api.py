@@ -188,12 +188,23 @@ def search_album_cover(sp, artist_name: str, album_name: str, track_uri: str = N
                         images = album.get('images', [])
                         
                         if images:
+                            # Get ALL artists for this album
+                            album_artists = [artist['name'] for artist in album['artists']]
+                            
+                            # Format all artists with proper formatting
+                            if len(album_artists) == 1:
+                                formatted_artists = album_artists[0]
+                            else:
+                                formatted_artists = f"{', '.join(album_artists)}"
+                            
                             return {
                                 'url': images[0]['url'],
                                 'width': images[0].get('width', 640),
                                 'height': images[0].get('height', 640),
                                 'spotify_id': album['id'],
                                 'spotify_url': album['external_urls']['spotify'],
+                                'album_artists': album_artists,  # List of all artists
+                                'album_artists_formatted': formatted_artists,  # Formatted string
                                 'source': 'track_uri'
                             }
                 except Exception as e:
@@ -217,23 +228,29 @@ def search_album_cover(sp, artist_name: str, album_name: str, track_uri: str = N
             # Check each result for exact artist match
             for album in results['albums']['items']:
                 # Get all artists for this album
-                album_artists = [a['name'].lower() for a in album['artists']]
+                album_artists = [a['name'] for a in album['artists']]
+                album_artists_lower = [a.lower() for a in album_artists]
                 
-                # Check if artist is the primary artist or listed as an artist
-                if clean_artist.lower() in album_artists:
-                    # Additional check: make sure it's not a various artists compilation
-                    # unless artist is specifically the main artist
-                    if len(album['artists']) == 1 or album_artists[0] == clean_artist.lower():
-                        images = album.get('images', [])
-                        if images:
-                            return {
-                                'url': images[0]['url'],
-                                'width': images[0].get('width', 640),
-                                'height': images[0].get('height', 640),
-                                'spotify_id': album['id'],
-                                'spotify_url': album['external_urls']['spotify'],
-                                'source': 'text_search'
-                            }
+                # Check if artist is listed among album artists
+                if clean_artist.lower() in album_artists_lower:
+                    images = album.get('images', [])
+                    if images:
+                        # Format all artists
+                        if len(album_artists) == 1:
+                            formatted_artists = album_artists[0]
+                        else:
+                            formatted_artists = f"{', '.join(album_artists)}"
+                        
+                        return {
+                            'url': images[0]['url'],
+                            'width': images[0].get('width', 640),
+                            'height': images[0].get('height', 640),
+                            'spotify_id': album['id'],
+                            'spotify_url': album['external_urls']['spotify'],
+                            'album_artists': album_artists,
+                            'album_artists_formatted': formatted_artists,
+                            'source': 'text_search'
+                        }
         
         # Second try: More specific query with quotes for exact matching
         if clean_album and clean_artist:
@@ -241,19 +258,29 @@ def search_album_cover(sp, artist_name: str, album_name: str, track_uri: str = N
             results = sp.search(q=query, type='album', limit=10)
             
             for album in results['albums']['items']:
-                album_artists = [a['name'].lower() for a in album['artists']]
-                if clean_artist.lower() in album_artists:
+                album_artists = [a['name'] for a in album['artists']]
+                album_artists_lower = [a.lower() for a in album_artists]
+                
+                if clean_artist.lower() in album_artists_lower:
                     # Check if it's a tribute/cover album (usually has multiple artists or "tribute" in name)
                     album_name_lower = album['name'].lower()
                     if 'tribute' not in album_name_lower and 'cover' not in album_name_lower:
                         images = album.get('images', [])
                         if images:
+                            # Format all artists
+                            if len(album_artists) == 1:
+                                formatted_artists = album_artists[0]
+                            else:
+                                formatted_artists = f"{', '.join(album_artists)}"
+                            
                             return {
                                 'url': images[0]['url'],
                                 'width': images[0].get('width', 640),
                                 'height': images[0].get('height', 640),
                                 'spotify_id': album['id'],
                                 'spotify_url': album['external_urls']['spotify'],
+                                'album_artists': album_artists,
+                                'album_artists_formatted': formatted_artists,
                                 'source': 'text_search_quoted'
                             }
         
@@ -265,19 +292,28 @@ def search_album_cover(sp, artist_name: str, album_name: str, track_uri: str = N
             # Score each result based on relevance
             best_match = None
             best_score = 0
+            best_artists = None
             
             for album in results['albums']['items']:
-                album_artists = [a['name'].lower() for a in album['artists']]
+                album_artists = [a['name'] for a in album['artists']]
+                album_artists_lower = [a.lower() for a in album_artists]
                 album_name_lower = album['name'].lower()
                 
                 score = 0
                 
                 # Artist match (highest weight)
-                if clean_artist and clean_artist.lower() in album_artists:
-                    score += 100
-                    # Extra points if it's the primary artist
-                    if album_artists[0] == clean_artist.lower():
-                        score += 50
+                if clean_artist:
+                    if clean_artist.lower() in album_artists_lower:
+                        score += 100
+                        # Extra points if it's the primary artist
+                        if album_artists_lower[0] == clean_artist.lower():
+                            score += 50
+                    # Check if any album artist contains parts of the search artist (for compilations)
+                    else:
+                        for album_artist in album_artists_lower:
+                            if any(part in album_artist for part in clean_artist.lower().split() if len(part) > 3):
+                                score += 40
+                                break
                 
                 # Album name match
                 if clean_album and clean_album.lower() in album_name_lower:
@@ -290,28 +326,33 @@ def search_album_cover(sp, artist_name: str, album_name: str, track_uri: str = N
                 if 'tribute' in album_name_lower or 'cover' in album_name_lower:
                     score -= 100
                 
-                # Penalize compilations with many artists (unless it's a known compilation)
-                if len(album['artists']) > 3:
-                    score -= 50
-                
-                # Check if this is likely a karaoke or instrumental version
-                if 'karaoke' in album_name_lower or 'instrumental' in album_name_lower:
-                    score -= 75
+                # Bonus for cast recordings/soundtracks (since they often have multiple artists)
+                if any(keyword in album_name_lower for keyword in ['cast', 'soundtrack', 'original', 'recording']):
+                    score += 15
                 
                 if score > best_score:
                     best_score = score
                     best_match = album
+                    best_artists = album_artists
             
             # Only return if decent match (score above threshold)
-            if best_match and best_score > 100:
+            if best_match and best_score > 80:
                 images = best_match.get('images', [])
                 if images:
+                    # Format all artists
+                    if len(album_artists) == 1:
+                        formatted_artists = album_artists[0]
+                    else:
+                        formatted_artists = f"{', '.join(album_artists)}"
+                    
                     return {
                         'url': images[0]['url'],
                         'width': images[0].get('width', 640),
                         'height': images[0].get('height', 640),
                         'spotify_id': best_match['id'],
                         'spotify_url': best_match['external_urls']['spotify'],
+                        'album_artists': best_artists,
+                        'album_artists_formatted': formatted_artists,
                         'source': 'text_search_scored'
                     }
         
@@ -352,7 +393,9 @@ def batch_search_album_covers(sp, albums_df: pd.DataFrame,
     results_df['spotify_album_url'] = None
     results_df['cover_width'] = None
     results_df['cover_height'] = None
-    results_df['cover_source'] = None  # Track whether used URI or text search
+    results_df['cover_source'] = None
+    results_df['album_artists'] = None  # List of all album artists
+    results_df['album_artists_formatted'] = None  # Formatted string of all artists
     
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -366,7 +409,7 @@ def batch_search_album_covers(sp, albums_df: pd.DataFrame,
             # Rate limiting pause
             time.sleep(1)
         
-        status_text.text(f"Searching {idx+1}/{total}: {row[artist_col]} - {row[album_col]}")
+        status_text.text(f"Searching {idx+1}/{total}: {row[album_col]}")
         
         # Get track URI if available
         track_uri = row.get(track_uri_col) if track_uri_col and track_uri_col in row else None
@@ -380,6 +423,8 @@ def batch_search_album_covers(sp, albums_df: pd.DataFrame,
             results_df.at[idx, 'cover_width'] = result['width']
             results_df.at[idx, 'cover_height'] = result['height']
             results_df.at[idx, 'cover_source'] = result.get('source', 'unknown')
+            results_df.at[idx, 'album_artists'] = result.get('album_artists', [])
+            results_df.at[idx, 'album_artists_formatted'] = result.get('album_artists_formatted', row[artist_col])
             successful += 1
             
             if result.get('source') == 'track_uri':
@@ -394,6 +439,91 @@ def batch_search_album_covers(sp, albums_df: pd.DataFrame,
     #     st.success(f"Found covers for {successful}/{total} albums ({successful/total*100:.1f}%)")
     #     if uri_success > 0:
     #         st.info(f"📌 {uri_success} albums found using track URIs (most accurate)")
+    
+    return results_df
+
+# Functions to aid in getting proper album artist.
+
+def get_album_primary_artist(sp, track_uri: str) -> Optional[str]:
+    """
+    Get the primary artist of an album from a track URI.
+    This is more accurate than using the track's artist for compilation albums.
+    """
+    if not sp or not track_uri:
+        return None
+    
+    try:
+        track_id = extract_track_id_from_uri(track_uri)
+        if not track_id:
+            return None
+        
+        # Get track details
+        track = sp.track(track_id)
+        
+        if track and 'album' in track:
+            album = track['album']
+            
+            # Get all album artists
+            album_artists = [artist['name'] for artist in album['artists']]
+            
+            # Return the primary artist (first one)
+            if album_artists:
+                return album_artists[0]
+    
+    except Exception as e:
+        print(f"Error getting album primary artist: {str(e)}")
+    
+    return None
+
+def get_album_primary_artists_batch(sp, albums_df: pd.DataFrame, 
+                                   track_uri_col: str = 'track_uri',
+                                   batch_size: int = 5) -> pd.DataFrame:
+    """
+    Batch process albums to get their primary artists from Spotify.
+    
+    Args:
+        sp: Spotify client
+        albums_df: DataFrame with album information
+        track_uri_col: Column containing track URIs
+        batch_size: Number of requests between pauses
+    
+    Returns:
+        DataFrame with added 'album_primary_artist' column
+    """
+    if sp is None:
+        return albums_df
+    
+    results_df = albums_df.copy()
+    results_df['album_primary_artist'] = None
+    
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    total = len(results_df)
+    successful = 0
+    
+    for idx, row in results_df.iterrows():
+        if idx % batch_size == 0 and idx > 0:
+            time.sleep(1)
+        
+        track_uri = row.get(track_uri_col) if track_uri_col in row else None
+        
+        if track_uri:
+            status_text.text(f"Getting album artist {idx+1}/{total}: {row['album']}")
+            
+            primary_artist = get_album_primary_artist(sp, track_uri)
+            
+            if primary_artist:
+                results_df.at[idx, 'album_primary_artist'] = primary_artist
+                successful += 1
+        
+        progress_bar.progress((idx + 1) / total)
+    
+    progress_bar.empty()
+    status_text.empty()
+    
+    if successful > 0:
+        st.info(f"Found primary album artists for {successful} albums")
     
     return results_df
 
@@ -449,12 +579,13 @@ def get_default_image_base64():
 def display_album_grid(albums_df: pd.DataFrame, 
                        cover_col: str = 'cover_url',
                        title_col: str = 'album',
-                       subtitle_col: str = 'artist',
+                       artist_col: str = 'album_artists_formatted',  # Default to formatted album artists
+                       fallback_artist_col: str = 'artist',  # Original track artist as fallback
                        plays_col: Optional[str] = None,
                        url_col: Optional[str] = 'spotify_album_url',
                        cols: int = 4):
     """
-    Display albums in a grid with their cover images - shows full album and artist names
+    Display albums in a grid with their cover images - shows all album artists when available
     """
     if len(albums_df) == 0:
         st.warning("No albums to display")
@@ -507,7 +638,12 @@ def display_album_grid(albums_df: pd.DataFrame,
                     
                     # Display album info with full names
                     album_title = str(album[title_col])
-                    artist_name = str(album[subtitle_col])
+                    
+                    # Use formatted album artists if available, otherwise use fallback
+                    if artist_col in album and pd.notna(album[artist_col]) and album[artist_col]:
+                        artist_name = str(album[artist_col])
+                    else:
+                        artist_name = str(album[fallback_artist_col])
                     
                     st.markdown(
                         f"<div style='word-wrap: break-word;'><strong>{album_title}</strong></div>",
@@ -527,12 +663,13 @@ def display_album_grid(albums_df: pd.DataFrame,
 def display_album_carousel(albums_df: pd.DataFrame, 
                           cover_col: str = 'cover_url',
                           title_col: str = 'album',
-                          subtitle_col: str = 'artist',
+                          artist_col: str = 'album_artists_formatted',  # Default to formatted album artists
+                          fallback_artist_col: str = 'artist',  # Original track artist as fallback
                           plays_col: Optional[str] = None,
                           url_col: Optional[str] = 'spotify_album_url',
                           height: int = 200):
     """
-    Create a horizontal scrollable carousel of albums
+    Create a horizontal scrollable carousel of albums - shows all album artists when available
     """
     # Show all albums, using default image for missing covers
     display_df = albums_df.head(50).copy()
@@ -564,7 +701,12 @@ def display_album_carousel(albums_df: pd.DataFrame,
         
         # Build the album info text
         title_text = str(album[title_col])
-        subtitle_text = str(album[subtitle_col])
+        
+        # Use formatted album artists if available, otherwise use fallback
+        if artist_col in album and pd.notna(album[artist_col]) and album[artist_col]:
+            artist_name = str(album[artist_col])
+        else:
+            artist_name = str(album[fallback_artist_col])
         
         plays_text = ""
         if plays_col and plays_col in album and pd.notna(album[plays_col]):
@@ -580,7 +722,7 @@ def display_album_carousel(albums_df: pd.DataFrame,
                 </a>
                 <div style="font-size: 12px; margin-top: 5px; width: 150px;">
                     <div style="word-wrap: break-word; white-space: normal;"><strong>{title_text}</strong></div>
-                    <div style="word-wrap: break-word; white-space: normal; color: #666;">{subtitle_text}</div>
+                    <div style="word-wrap: break-word; white-space: normal; color: #666;">{artist_name}</div>
                     <div style="color: #999; font-size: 11px; white-space: normal;">{plays_text}</div>
                 </div>
             </div>
@@ -591,7 +733,7 @@ def display_album_carousel(albums_df: pd.DataFrame,
                 {img_html}
                 <div style="font-size: 12px; margin-top: 5px; width: 150px;">
                     <div style="word-wrap: break-word; white-space: normal;"><strong>{title_text}</strong></div>
-                    <div style="word-wrap: break-word; white-space: normal; color: #666;">{subtitle_text}</div>
+                    <div style="word-wrap: break-word; white-space: normal; color: #666;">{artist_name}</div>
                     <div style="color: #999; font-size: 11px; white-space: normal;">{plays_text}</div>
                 </div>
             </div>

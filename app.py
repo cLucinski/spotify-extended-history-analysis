@@ -1415,7 +1415,8 @@ def main():
                             st.session_state.albums_with_covers,
                             cover_col='cover_url',
                             title_col='album',
-                            subtitle_col='artist',
+                            artist_col='album_artists_formatted',  # All album artists formatted
+                            fallback_artist_col='artist',  # Original track artist as fallback
                             plays_col=value_label,
                             url_col='spotify_album_url',
                             cols=5
@@ -1425,7 +1426,8 @@ def main():
                             st.session_state.albums_with_covers,
                             cover_col='cover_url',
                             title_col='album',
-                            subtitle_col='artist',
+                            artist_col='album_artists_formatted',  # All album artists formatted
+                            fallback_artist_col='artist',  # Original track artist as fallback
                             plays_col=value_label,
                             url_col='spotify_album_url',
                             height=200
@@ -1482,9 +1484,6 @@ if 'last_min_seconds' not in st.session_state:
     st.session_state.last_min_seconds = None
 if 'last_uploaded_files' not in st.session_state:
     st.session_state.last_uploaded_files = None
-
-if 'zip_data' in st.session_state:
-    del st.session_state.zip_data
 
 
 if __name__ == "__main__":
