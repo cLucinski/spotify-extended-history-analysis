@@ -152,41 +152,105 @@ def search_album_cover(sp, artist_name: str, album_name: str) -> Optional[Dict]:
         clean_album = album_name.split('(')[0].split('[')[0].strip()
         clean_artist = artist_name.split('(')[0].split('[')[0].strip()
         
-        # Search for album
+        # First try: Exact album search with artist filter
         query = f"album:{clean_album} artist:{clean_artist}"
-        results = sp.search(q=query, type='album', limit=1)
+        results = sp.search(q=query, type='album', limit=10)
         
-        if results['albums']['items']:
-            album = results['albums']['items'][0]
-            # Get the largest image available (usually 640x640)
-            images = album.get('images', [])
+        # Check each result for exact artist match
+        for album in results['albums']['items']:
+            # Get all artists for this album
+            album_artists = [a['name'].lower() for a in album['artists']]
+            
+            # Check if our artist is the primary artist or listed as an artist
+            if clean_artist.lower() in album_artists:
+                # Additional check: make sure it's not a various artists compilation
+                # unless our artist is specifically the main artist
+                if len(album['artists']) == 1 or album_artists[0] == clean_artist.lower():
+                    images = album.get('images', [])
+                    if images:
+                        return {
+                            'url': images[0]['url'],
+                            'width': images[0].get('width', 640),
+                            'height': images[0].get('height', 640),
+                            'spotify_id': album['id'],
+                            'spotify_url': album['external_urls']['spotify']
+                        }
+        
+        # Second try: More specific query with quotes for exact matching
+        query = f'album:"{clean_album}" artist:"{clean_artist}"'
+        results = sp.search(q=query, type='album', limit=10)
+        
+        for album in results['albums']['items']:
+            album_artists = [a['name'].lower() for a in album['artists']]
+            if clean_artist.lower() in album_artists:
+                # Check if it's a tribute/cover album (usually has multiple artists or "tribute" in name)
+                album_name_lower = album['name'].lower()
+                if 'tribute' not in album_name_lower and 'cover' not in album_name_lower:
+                    images = album.get('images', [])
+                    if images:
+                        return {
+                            'url': images[0]['url'],
+                            'width': images[0].get('width', 640),
+                            'height': images[0].get('height', 640),
+                            'spotify_id': album['id'],
+                            'spotify_url': album['external_urls']['spotify']
+                        }
+        
+        # Third try: Search for the album and filter manually
+        query = f"{clean_artist} {clean_album}"
+        results = sp.search(q=query, type='album', limit=20)
+        
+        # Score each result based on relevance
+        best_match = None
+        best_score = 0
+        
+        for album in results['albums']['items']:
+            album_artists = [a['name'].lower() for a in album['artists']]
+            album_name_lower = album['name'].lower()
+            
+            score = 0
+            
+            # Artist match (highest weight)
+            if clean_artist.lower() in album_artists:
+                score += 100
+                # Extra points if it's the primary artist
+                if album_artists[0] == clean_artist.lower():
+                    score += 50
+            
+            # Album name match
+            if clean_album.lower() in album_name_lower:
+                score += 30
+                # Exact match bonus
+                if clean_album.lower() == album_name_lower:
+                    score += 20
+            
+            # Penalize tribute/cover albums
+            if 'tribute' in album_name_lower or 'cover' in album_name_lower:
+                score -= 100
+            
+            # Penalize compilations with many artists (unless it's a known compilation)
+            if len(album['artists']) > 3:
+                score -= 50
+            
+            # Check if this is likely a karaoke or instrumental version
+            if 'karaoke' in album_name_lower or 'instrumental' in album_name_lower:
+                score -= 75
+            
+            if score > best_score:
+                best_score = score
+                best_match = album
+        
+        # Only return if we have a decent match (score above threshold)
+        if best_match and best_score > 100:
+            images = best_match.get('images', [])
             if images:
-                # Images are typically ordered by size (largest first)
                 return {
                     'url': images[0]['url'],
                     'width': images[0].get('width', 640),
                     'height': images[0].get('height', 640),
-                    'spotify_id': album['id'],
-                    'spotify_url': album['external_urls']['spotify']
+                    'spotify_id': best_match['id'],
+                    'spotify_url': best_match['external_urls']['spotify']
                 }
-        
-        # Try a more general search if specific search fails
-        query = f"{clean_artist} {clean_album}"
-        results = sp.search(q=query, type='album', limit=3)
-        
-        for album in results['albums']['items']:
-            # Check if artist matches approximately
-            album_artists = [a['name'].lower() for a in album['artists']]
-            if clean_artist.lower() in ' '.join(album_artists):
-                images = album.get('images', [])
-                if images:
-                    return {
-                        'url': images[0]['url'],
-                        'width': images[0].get('width', 640),
-                        'height': images[0].get('height', 640),
-                        'spotify_id': album['id'],
-                        'spotify_url': album['external_urls']['spotify']
-                    }
         
         return None
         
