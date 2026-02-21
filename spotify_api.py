@@ -861,8 +861,8 @@ def create_album_covers_zip(albums_df: pd.DataFrame,
                 # Truncate if too long (max 100 chars for filename)
                 if len(safe_album) > 80:
                     safe_album = safe_album[:80]
-                if len(safe_artist) > 20:
-                    safe_artist = safe_artist[:20]
+                if len(safe_artist) > 80:
+                    safe_artist = safe_artist[:80]
                 
                 # Create filename: "Artist - Album.jpg"
                 filename = f"{safe_artist} - {safe_album}.jpg"

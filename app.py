@@ -1365,7 +1365,7 @@ def main():
             cover_top_n = st.slider(
                 "Number of top albums to search for",
                 min_value=10,
-                max_value=200,
+                max_value=1000,
                 value=50,
                 step=10
             )
@@ -1455,7 +1455,7 @@ def main():
                                     st.session_state.albums_with_covers,
                                     cover_col='cover_url',
                                     title_col='album',
-                                    artist_col='artist'
+                                    artist_col='album_artists_formatted'
                                 )
                                 if zip_data:
                                     st.session_state.zip_data = zip_data
