@@ -163,6 +163,6 @@ cython_debug/
 Streaming_History_*.json
 test.json
 *.pdf
-*.txt
 data/*
 .streamlit/secrets.toml
+/output
