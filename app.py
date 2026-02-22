@@ -1415,6 +1415,7 @@ def main():
                             st.session_state.albums_with_covers,
                             cover_col='cover_url',
                             title_col='album',
+                            #TODO: put cap on max label characters?
                             artist_col='album_artists_formatted',  # All album artists formatted
                             fallback_artist_col='artist',  # Original track artist as fallback
                             plays_col=value_label,
@@ -1466,7 +1467,7 @@ def main():
                             st.download_button(
                                 label="📦 Download Album Covers ZIP",
                                 data=st.session_state.zip_data,
-                                file_name="spotify_album_covers.zip",
+                                file_name=f"top_{found_covers}_spotify_albums_({date_range[0]}_\u2013_{date_range[1]}).zip",
                                 mime="application/zip",
                                 type="primary",
                                 key="download_zip"
