@@ -1450,7 +1450,7 @@ def main():
                         )
                         
                         # Zip download button - only creates zip when clicked
-                        if st.button("📦 Prepare Album Covers ZIP"):
+                        if st.button("📦 Prepare Album Cover Images ZIP"):
                             with st.spinner("Downloading and packaging album covers... This may take a moment."):
                                 zip_data = create_album_covers_zip(
                                     st.session_state.albums_with_covers,
@@ -1465,7 +1465,7 @@ def main():
                         # Show download button if zip data is prepared
                         if 'zip_data' in st.session_state:
                             st.download_button(
-                                label="📦 Download Album Covers ZIP",
+                                label="📦 Download Album Cover Images ZIP",
                                 data=st.session_state.zip_data,
                                 file_name=f"top_{found_covers}_spotify_albums_({date_range[0]}_\u2013_{date_range[1]}).zip",
                                 mime="application/zip",
