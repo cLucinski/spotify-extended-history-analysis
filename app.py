@@ -7,6 +7,11 @@ import numpy as np
 from datetime import datetime, timedelta
 import io
 import gc
+from spotify_api import (
+    get_spotify_client, batch_search_album_covers, 
+    display_album_grid, display_album_carousel, get_albums_for_cover_search, 
+    create_album_covers_zip
+)
 
 # Configure Streamlit
 st.set_page_config(page_title="Spotify Analysis", layout="wide")
@@ -1130,10 +1135,10 @@ def main():
     # ============================================================================
 
     # Display charts in tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📊 Timeline", "🎤 Top Artists", "🎵 Top Songs",
         "💽 Top Albums", "👨‍🎤 Artist Timeline",
-        "🎙 Podcasts", "📋 Summary"
+        "🎙 Podcasts", "📋 Summary", "🎨 Album Art"
     ])
 
     with tab1:
@@ -1338,6 +1343,135 @@ def main():
             st.metric("Total Listening Days", f"{aggregates['daily_listens']['date'].nunique():,}")
             st.metric("Most Active Month", f"{aggregates['monthly_listens'].loc[aggregates['monthly_listens']['count'].idxmax(), 'month']}")
             st.metric("Total Unique Songs", f"{aggregates['filtered_df']['master_metadata_track_name'].nunique():,}")
+    with tab8:
+        st.subheader("🎨 Album Cover Gallery")
+        
+        # Show setup instructions
+        from spotify_api import show_auth_instructions
+        show_auth_instructions()
+        
+        # Initialize Spotify client (using Client Credentials for public data)
+        sp = get_spotify_client(use_oauth=False)
+        
+        if sp is None:
+            st.error("⚠️ Spotify API credentials not configured or invalid.")
+        else:
+            st.success("✅ Spotify API connected (public data mode)!")
+            
+            # Integrate option to choose between play count and playtime for album ranking
+            album_ranking_method = analysis_type
+            
+            # Get top albums for cover search based on selected method
+            cover_top_n = st.slider(
+                "Number of top albums to search for",
+                min_value=10,
+                max_value=1000,
+                value=50,
+                step=10
+            )
+            
+            # Get albums data based on selected ranking method
+            with st.spinner("Preparing album list..."):
+                albums_df = get_albums_for_cover_search(aggregates, top_n=cover_top_n, ranking_method=album_ranking_method)
+            
+            if len(albums_df) == 0:
+                st.warning("No albums found in your listening history.")
+            else:
+                # Determine which value column exists
+                if 'hours' in albums_df.columns:
+                    value_label = 'hours'
+                else:
+                    value_label = 'plays'
+                    
+                st.info(f"Found {len(albums_df)} unique albums to search for (ranked by {album_ranking_method.lower()}).")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    search_button = st.button("🔍 Search for Album Covers", type="primary")
+                
+                with col2:
+                    display_mode = st.radio("Display Mode", ["Grid", "Carousel"])
+                
+                if search_button:
+                    with st.spinner("Searching Spotify for album covers..."):
+                        albums_with_covers = batch_search_album_covers(
+                            sp, 
+                            albums_df,
+                            artist_col='artist',
+                            album_col='album',
+                            track_uri_col='track_uri',
+                            batch_size=5
+                        )
+                        st.session_state.albums_with_covers = albums_with_covers
+                        # Clear any previously generated zip data when new search is performed
+                        if 'zip_data' in st.session_state:
+                            del st.session_state.zip_data
+                
+                # Display results if we have them
+                if 'albums_with_covers' in st.session_state:
+                    if display_mode == "Grid":
+                        display_album_grid(
+                            st.session_state.albums_with_covers,
+                            cover_col='cover_url',
+                            title_col='album',
+                            #TODO: put cap on max label characters?
+                            artist_col='album_artists_formatted',  # All album artists formatted
+                            fallback_artist_col='artist',  # Original track artist as fallback
+                            plays_col=value_label,
+                            url_col='spotify_album_url',
+                            cols=5
+                        )
+                    else:
+                        display_album_carousel(
+                            st.session_state.albums_with_covers,
+                            cover_col='cover_url',
+                            title_col='album',
+                            artist_col='album_artists_formatted',  # All album artists formatted
+                            fallback_artist_col='artist',  # Original track artist as fallback
+                            plays_col=value_label,
+                            url_col='spotify_album_url',
+                            height=200
+                        )
+                    
+                    # Show statistics
+                    found_covers = st.session_state.albums_with_covers['cover_url'].notna().sum()
+                    st.info(f"Found {found_covers} album covers out of {len(st.session_state.albums_with_covers)} searched.")
+                    
+                    # Download buttons
+                    if found_covers > 0:
+                        # CSV download button
+                        csv = st.session_state.albums_with_covers.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download album data as CSV",
+                            data=csv,
+                            file_name="spotify_albums_with_covers.csv",
+                            mime="text/csv"
+                        )
+                        
+                        # Zip download button - only creates zip when clicked
+                        if st.button("📦 Prepare Album Cover Images ZIP"):
+                            with st.spinner("Downloading and packaging album covers... This may take a moment."):
+                                zip_data = create_album_covers_zip(
+                                    st.session_state.albums_with_covers,
+                                    cover_col='cover_url',
+                                    title_col='album',
+                                    artist_col='album_artists_formatted'
+                                )
+                                if zip_data:
+                                    st.session_state.zip_data = zip_data
+                                    st.success("✅ ZIP file ready for download!")
+                        
+                        # Show download button if zip data is prepared
+                        if 'zip_data' in st.session_state:
+                            st.download_button(
+                                label="📦 Download Album Cover Images ZIP",
+                                data=st.session_state.zip_data,
+                                file_name=f"top_{found_covers}_spotify_albums_({date_range[0]}_\u2013_{date_range[1]}).zip",
+                                mime="application/zip",
+                                type="primary",
+                                key="download_zip"
+                            )
 
 # Initialize session state variables if they don't exist
 if 'data_loaded' not in st.session_state:
