@@ -128,7 +128,10 @@ def create_top_songs_chart(aggregates, top_n, analysis_type):
         title = f'Top {top_n} Songs by Plays'
         x_label = 'Number of Plays'
     
-    top_songs['song_artist'] = top_songs['master_metadata_track_name'] + ' - ' + top_songs['master_metadata_album_artist_name']
+    # # Truncate song titles
+    # top_songs['short_track_name'] = top_songs['master_metadata_track_name'].apply(lambda x: x[:25] + '...' if len(x) > 25 else x[:25])
+
+    top_songs['song_and_artist'] = top_songs['master_metadata_track_name'] + ' - ' + top_songs['master_metadata_album_artist_name']
     
     # Create ranking column with "min" method to handle ties
     top_songs['rank'] = top_songs[x_col].rank(method="min", ascending=False).astype(int)
@@ -136,10 +139,10 @@ def create_top_songs_chart(aggregates, top_n, analysis_type):
     fig = px.bar(
         top_songs, 
         x=x_col, 
-        y='song_artist',
+        y='song_and_artist',
         orientation='h',
         title=title,
-        labels={x_col: x_label, 'song_artist': 'Song'},
+        labels={x_col: x_label, 'song_and_artist': 'Song'},
         color='rank',
         color_continuous_scale='plasma_r'
     )
@@ -148,7 +151,7 @@ def create_top_songs_chart(aggregates, top_n, analysis_type):
         yaxis={'categoryorder': 'total ascending'},
         showlegend=False,
         coloraxis_showscale=False,
-        height=600,
+        height=1000 if top_n > 30 else 600,
         # Add grid lines for better readability
         xaxis=dict(
             showgrid=True,
@@ -401,23 +404,23 @@ def create_cumulative_song_chart(df, top_songs_data, top_n, frequency, analysis_
     """Create cumulative timeline for top songs, ordered by total"""
     # Get top songs and create combined identifier
     top_songs = top_songs_data.head(top_n).copy()
-    top_songs['song_artist'] = top_songs['master_metadata_track_name'] + ' - ' + top_songs['master_metadata_album_artist_name']
-    top_song_identifiers = top_songs['song_artist'].tolist()
+    top_songs['song_and_artist'] = top_songs['master_metadata_track_name'] + ' - ' + top_songs['master_metadata_album_artist_name']
+    top_song_identifiers = top_songs['song_and_artist'].tolist()
     
     # Create the same identifier in the main dataframe
-    df['song_artist'] = df['master_metadata_track_name'] + ' - ' + df['master_metadata_album_artist_name']
-    song_df = df[df['song_artist'].isin(top_song_identifiers)].copy()
+    df['song_and_artist'] = df['master_metadata_track_name'] + ' - ' + df['master_metadata_album_artist_name']
+    song_df = df[df['song_and_artist'].isin(top_song_identifiers)].copy()
     
     if frequency == 'Daily':
         if analysis_type == 'Total Playtime':
-            daily_data = song_df.groupby(['date_dt', 'song_artist'])['hours_played'].sum().reset_index()
+            daily_data = song_df.groupby(['date_dt', 'song_and_artist'])['hours_played'].sum().reset_index()
         else:
-            daily_data = song_df.groupby(['date_dt', 'song_artist']).size().reset_index(name='count')
+            daily_data = song_df.groupby(['date_dt', 'song_and_artist']).size().reset_index(name='count')
         
         # Create cumulative sum for each song
         cumulative_data = []
         for song in top_song_identifiers:
-            song_data = daily_data[daily_data['song_artist'] == song].sort_values('date_dt')
+            song_data = daily_data[daily_data['song_and_artist'] == song].sort_values('date_dt')
             if analysis_type == 'Total Playtime':
                 song_data['cumulative'] = song_data['hours_played'].cumsum()
             else:
@@ -429,16 +432,16 @@ def create_cumulative_song_chart(df, top_songs_data, top_n, frequency, analysis_
         
     else:  # Monthly
         if analysis_type == 'Total Playtime':
-            monthly_data = song_df.groupby(['month', 'song_artist'])['hours_played'].sum().reset_index()
+            monthly_data = song_df.groupby(['month', 'song_and_artist'])['hours_played'].sum().reset_index()
         else:
-            monthly_data = song_df.groupby(['month', 'song_artist']).size().reset_index(name='count')
+            monthly_data = song_df.groupby(['month', 'song_and_artist']).size().reset_index(name='count')
         
         monthly_data['month'] = monthly_data['month'].astype(str)
         
         # Create cumulative sum for each song
         cumulative_data = []
         for song in top_song_identifiers:
-            song_data = monthly_data[monthly_data['song_artist'] == song].sort_values('month')
+            song_data = monthly_data[monthly_data['song_and_artist'] == song].sort_values('month')
             if analysis_type == 'Total Playtime':
                 song_data['cumulative'] = song_data['hours_played'].cumsum()
             else:
@@ -450,9 +453,9 @@ def create_cumulative_song_chart(df, top_songs_data, top_n, frequency, analysis_
     
     # Calculate final totals for legend ordering
     if analysis_type == 'Total Playtime':
-        final_totals = cumulative_df.groupby('song_artist')['cumulative'].max().sort_values(ascending=False)
+        final_totals = cumulative_df.groupby('song_and_artist')['cumulative'].max().sort_values(ascending=False)
     else:
-        final_totals = song_df['song_artist'].value_counts()
+        final_totals = song_df['song_and_artist'].value_counts()
     
     legend_order = final_totals.index.tolist()
     
@@ -460,12 +463,12 @@ def create_cumulative_song_chart(df, top_songs_data, top_n, frequency, analysis_
         cumulative_df, 
         x=x_col, 
         y='cumulative',
-        color='song_artist',
+        color='song_and_artist',
         title=f'Cumulative Listening for Top {top_n} Songs',
         labels={'date_dt': "Date", 
                 'cumulative': 'Cumulative Hours Played' if analysis_type == 'Total Playtime' else 'Cumulative Number of Plays',
-                'song_artist': 'Song - Artist'},
-        category_orders={"song_artist": legend_order}
+                'song_and_artist': 'Song - Artist'},
+        category_orders={"song_and_artist": legend_order}
     )
     
     fig.update_layout(
