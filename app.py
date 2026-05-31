@@ -1055,10 +1055,10 @@ def main():
     if not st.session_state.get('data_loaded', False):
         st.info("""
         ## 📁 How to use this analyzer:
-        1. **Export your Spotify data** from [Spotify's Privacy Settings](https://www.spotify.com/us/account/privacy/)
-        2. **Wait for email** (can take between a few hours and a few days)
-        3. **Upload all your** `Streaming_History_Audio_*.json` files using the file browser on the left
-        4. **Click "Load and Process Data"** to begin analysis
+        1. **Export your Spotify data** from [Spotify's Privacy Settings](https://www.spotify.com/us/account/privacy/).
+        2. **Wait for email** (can take between a few hours and a few days).
+        3. **Upload all your** `Streaming_History_Audio_*.json` files using the file browser in this page's sidebar on the left.
+        4. **Click "Load and Process Data"** to view your listening history. Parameters can be adjusted in the sidebar.
         """)
         return
 
