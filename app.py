@@ -1453,14 +1453,14 @@ def main():
                         # CSV download button
                         csv = st.session_state.albums_with_covers.to_csv(index=False)
                         st.download_button(
-                            label="📥 Download album data as CSV",
+                            label="📥 Download album data as CSV file",
                             data=csv,
                             file_name="spotify_albums_with_covers.csv",
                             mime="text/csv"
                         )
                         
                         # Zip download button - only creates zip when clicked
-                        if st.button("📦 Prepare Album Cover Images ZIP"):
+                        if st.button("📦 Prepare to Download Album Cover Images"):
                             with st.spinner("Downloading and packaging album covers... This may take a moment."):
                                 zip_data = create_album_covers_zip(
                                     st.session_state.albums_with_covers,

@@ -884,7 +884,7 @@ def create_album_covers_zip(albums_df: pd.DataFrame,
     if successful == 0:
         return None
     
-    st.success(f"Successfully downloaded {successful} album covers!")
+    # st.success(f"Successfully downloaded {successful} album covers!")
     
     # Return the zip file as bytes
     zip_buffer.seek(0)
