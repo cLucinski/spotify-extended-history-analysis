@@ -1143,7 +1143,7 @@ def main():
     # ============================================================================
 
     # Display charts in tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📊 Timeline", "🎤 Top Artists", "🎵 Top Songs",
         "💽 Top Albums", 
         # "👨‍🎤 Artist Timeline",
