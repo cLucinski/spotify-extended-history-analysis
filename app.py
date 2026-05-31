@@ -1145,7 +1145,8 @@ def main():
     # Display charts in tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📊 Timeline", "🎤 Top Artists", "🎵 Top Songs",
-        "💽 Top Albums", "👨‍🎤 Artist Timeline",
+        "💽 Top Albums", 
+        # "👨‍🎤 Artist Timeline",
         "🎙 Podcasts", "📋 Summary", "🎨 Album Art"
     ])
 
@@ -1264,17 +1265,17 @@ def main():
         )
         st.plotly_chart(album_cumulative_fig, use_container_width=True)
 
-    with tab5:
-        st.subheader(f"Artist Listening Timeline")
-        artist_timeline_fig = create_artist_timeline_chart(
-            aggregates['filtered_df'], 
-            aggregates['top_artists_count'], 
-            min(top_n, 10),  # Limit to top 10 for clarity
-            timeline_freq
-        )
-        st.plotly_chart(artist_timeline_fig, use_container_width=True)
+    # with tab5:
+    #     st.subheader(f"Artist Listening Timeline")
+    #     artist_timeline_fig = create_artist_timeline_chart(
+    #         aggregates['filtered_df'], 
+    #         aggregates['top_artists_count'], 
+    #         min(top_n, 10),  # Limit to top 10 for clarity
+    #         timeline_freq
+    #     )
+    #     st.plotly_chart(artist_timeline_fig, use_container_width=True)
 
-    with tab6:
+    with tab5:
         st.subheader("🎙 Podcast Listening")
 
         podcast_data = compute_podcast_aggregates(
@@ -1330,7 +1331,7 @@ def main():
             if cum_podcast_fig:
                 st.plotly_chart(cum_podcast_fig, use_container_width=True)
 
-    with tab7:
+    with tab6:
         st.subheader("Data Summary")
 
         col1, col2 = st.columns(2)
@@ -1351,7 +1352,8 @@ def main():
             st.metric("Total Listening Days", f"{aggregates['daily_listens']['date'].nunique():,}")
             st.metric("Most Active Month", f"{aggregates['monthly_listens'].loc[aggregates['monthly_listens']['count'].idxmax(), 'month']}")
             st.metric("Total Unique Songs", f"{aggregates['filtered_df']['master_metadata_track_name'].nunique():,}")
-    with tab8:
+    
+    with tab7:
         st.subheader("🎨 Album Cover Gallery")
         
         # # Show setup instructions
@@ -1364,7 +1366,7 @@ def main():
         if sp is None:
             st.error("⚠️ Spotify API credentials not configured or invalid.")
         else:
-            st.success("✅ Spotify API connected (public data mode)!")
+            # st.success("✅ Spotify API connected (public data mode)!")
             
             # Integrate option to choose between play count and playtime for album ranking
             album_ranking_method = analysis_type
@@ -1373,8 +1375,8 @@ def main():
             cover_top_n = st.slider(
                 "Number of top albums to search for",
                 min_value=10,
-                max_value=1000,
-                value=50,
+                max_value=500,
+                value=10,
                 step=10
             )
             
