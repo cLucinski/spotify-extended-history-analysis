@@ -1147,7 +1147,7 @@ def main():
         "📊 Timeline", "🎤 Top Artists", "🎵 Top Songs",
         "💽 Top Albums", 
         # "👨‍🎤 Artist Timeline",
-        "🎙 Podcasts", "📋 Summary", "🎨 Album Art"
+        "🎙 Podcasts", "📋 Summary", "🎨 Top Albums - Art"
     ])
 
     with tab1:
@@ -1354,7 +1354,7 @@ def main():
             st.metric("Total Unique Songs", f"{aggregates['filtered_df']['master_metadata_track_name'].nunique():,}")
     
     with tab7:
-        st.subheader("🎨 Album Cover Gallery")
+        st.subheader("🎨 Top Albums - Cover Gallery")
         
         # # Show setup instructions
         # from spotify_api import show_auth_instructions
@@ -1373,7 +1373,7 @@ def main():
             
             # Get top albums for cover search based on selected method
             cover_top_n = st.slider(
-                "Number of top albums to search for",
+                "**Number of albums to search for:**",
                 min_value=10,
                 max_value=500,
                 value=10,
@@ -1393,12 +1393,12 @@ def main():
                 else:
                     value_label = 'plays'
                     
-                st.info(f"Found {len(albums_df)} unique albums to search for (ranked by {album_ranking_method.lower()}).")
+                # st.info(f"Found {len(albums_df)} unique albums to search for (ranked by {album_ranking_method.lower()}).")
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    search_button = st.button("🔍 Search for Album Covers", type="primary")
+                    search_button = st.button(f"🔍 Search Covers of Your Top Albums by {album_ranking_method.lower()}", type="primary")
                 
                 with col2:
                     display_mode = st.radio("Display Mode", ["Grid", "Carousel"])
