@@ -12,7 +12,7 @@ from spotify_api import (
 )
 
 # Configure Streamlit
-st.set_page_config(page_title="Spotify Analysis", layout="wide")
+st.set_page_config(page_title="Spotify Extended Streaming History", layout="wide")
 
 # ============================================================================
 # CHART FUNCTIONS
@@ -975,7 +975,7 @@ def clear_cache_and_reload():
 # ============================================================================
 
 def main():
-    st.title("🎵 Spotify Listening History Analyzer")
+    st.title("🎵 Spotify Extended Streaming History Reader")
 
     # File upload section
     st.sidebar.header("1. Upload Your Data")
@@ -1054,7 +1054,7 @@ def main():
     # Check if data is loaded
     if not st.session_state.get('data_loaded', False):
         st.info("""
-        ## 📁 How to use this analyzer:
+        ## 📁 How to use this app:
         1. **Export your Spotify data** from [Spotify's Privacy Settings](https://www.spotify.com/us/account/privacy/) by 
                 scrolling near the bottom of the page and checking the box under "Extended streaming history". 
             - You may also uncheck "Account data" if it is checked. This information is not needed.
@@ -1066,6 +1066,8 @@ def main():
         5. **Locate the "Spotify Extended Streaming History" folder** in your download.
         6. **Upload all the files** that start with **"Streaming_History_Audio_"** using the file browser in this page's sidebar on the left.
         7. **Click "Load and Process Data"** to view your listening history. Parameters can be adjusted in the sidebar.
+        
+        *This app proccesses data locally on your device and does not save it elsewhere.*
         """)
         return
 
