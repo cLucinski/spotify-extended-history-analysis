@@ -1056,7 +1056,7 @@ def main():
         st.info("""
         ## 📁 How to use this analyzer:
         1. **Export your Spotify data** from [Spotify's Privacy Settings](https://www.spotify.com/us/account/privacy/)
-        2. **Wait for email** (usually takes a few days)
+        2. **Wait for email** (can take between a few hours and a few days)
         3. **Upload all your** `Streaming_History_Audio_*.json` files using the file browser on the left
         4. **Click "Load and Process Data"** to begin analysis
         """)
@@ -1347,9 +1347,9 @@ def main():
     with tab8:
         st.subheader("🎨 Album Cover Gallery")
         
-        # Show setup instructions
-        from spotify_api import show_auth_instructions
-        show_auth_instructions()
+        # # Show setup instructions
+        # from spotify_api import show_auth_instructions
+        # show_auth_instructions()
         
         # Initialize Spotify client (using Client Credentials for public data)
         sp = get_spotify_client(use_oauth=False)
