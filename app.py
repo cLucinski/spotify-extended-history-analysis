@@ -1116,14 +1116,13 @@ def main():
 
     # Analysis parameters
     st.sidebar.header("3. Chart Settings")
-    top_n = st.sidebar.slider("Number of Top Items", 5, 50, 15)
-    timeline_freq = st.sidebar.radio("Timeline Frequency", ['Daily', 'Monthly'])
-
     analysis_type = st.sidebar.radio(
         "Analysis Type", 
         ['Number of Plays', 'Total Playtime'],
         help="Show charts based on play count or total time played"
     )
+    top_n = st.sidebar.slider("Number of Top Items", 5, 50, 15)
+    timeline_freq = st.sidebar.radio("Timeline Frequency", ['Daily', 'Monthly'])
 
     # Clear cache button
     st.sidebar.header("4. System")
