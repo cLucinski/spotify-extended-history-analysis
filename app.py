@@ -5,11 +5,104 @@ import plotly.express as px
 import numpy as np
 import io
 import gc
+import os
+import zipfile
 from spotify_api import (
-    get_spotify_client, batch_search_album_covers, 
-    display_album_grid, display_album_carousel, get_albums_for_cover_search, 
-    create_album_covers_zip
+    get_spotify_client,
+    batch_search_album_covers,
+    display_album_grid,
+    display_album_carousel,
+    get_albums_for_cover_search,
+    create_album_covers_zip,
 )
+
+
+# ============================================================================
+# UNZIP FILE FUNCTIONS
+# ============================================================================
+
+# Safety limits for zip extraction (in-memory, no disk writes)
+MAX_ZIP_TOTAL_UNCOMPRESSED = 2 * 1024**3   # 2 GB across all files in one zip
+MAX_ZIP_FILE_UNCOMPRESSED = 500 * 1024**2  # 500 MB for any single file
+MAX_ZIP_MEMBER_COUNT = 5000                # guard against tiny-file bombs
+
+
+class _InMemoryUploadedFile:
+    """Minimal stand-in for Streamlit's UploadedFile, backed by in-memory bytes."""
+    def __init__(self, name: str, data: bytes):
+        self.name = name
+        self._data = data
+        self.size = len(data)
+
+    def getvalue(self) -> bytes:
+        return self._data
+
+
+def _is_streaming_history_json(filename: str) -> bool:
+    base = os.path.basename(filename)
+    return base.lower().startswith("streaming_history_audio_") and base.lower().endswith(".json")
+
+
+def extract_audio_files_from_uploads(uploaded_files):
+    """
+    Accepts a mix of raw .json uploads and Spotify export .zip uploads.
+    Zips are read entirely in memory - nothing is ever written to disk,
+    so path traversal isn't a concern. Only Streaming_History_Audio_*.json
+    entries are pulled out; everything else in the zip is ignored.
+    """
+    result = []
+
+    for f in uploaded_files:
+        name_lower = f.name.lower()
+
+        if name_lower.endswith(".zip"):
+            try:
+                zf = zipfile.ZipFile(io.BytesIO(f.getvalue()))
+            except zipfile.BadZipFile:
+                st.sidebar.error(f"'{f.name}' doesn't look like a valid zip file.")
+                continue
+
+            infos = zf.infolist()
+
+            if len(infos) > MAX_ZIP_MEMBER_COUNT:
+                st.sidebar.error(f"'{f.name}' contains too many files ({len(infos):,}) — skipping.")
+                continue
+
+            total_uncompressed = sum(i.file_size for i in infos)
+            if total_uncompressed > MAX_ZIP_TOTAL_UNCOMPRESSED:
+                st.sidebar.error(
+                    f"'{f.name}' would expand to over "
+                    f"{MAX_ZIP_TOTAL_UNCOMPRESSED / 1024**3:.1f} GB — skipping as a safety precaution."
+                )
+                continue
+
+            found_any = False
+            for info in infos:
+                if info.is_dir() or not _is_streaming_history_json(info.filename):
+                    continue
+                if info.file_size > MAX_ZIP_FILE_UNCOMPRESSED:
+                    st.sidebar.warning(f"Skipping '{info.filename}' — unexpectedly large.")
+                    continue
+                try:
+                    data = zf.read(info)
+                except Exception as e:
+                    st.sidebar.warning(f"Couldn't read '{info.filename}': {e}")
+                    continue
+                result.append(_InMemoryUploadedFile(os.path.basename(info.filename), data))
+                found_any = True
+
+            if not found_any:
+                st.sidebar.warning(
+                    f"No 'Streaming_History_Audio_*.json' files found inside '{f.name}'. "
+                    "Make sure this is the zip Spotify emailed you."
+                )
+
+        elif name_lower.endswith(".json"):
+            result.append(f)
+        else:
+            st.sidebar.warning(f"Skipping unrecognized file: {f.name}")
+
+    return result
 
 # Configure Streamlit
 st.set_page_config(page_title="Spotify Extended Streaming History", layout="wide")
@@ -775,10 +868,18 @@ def create_artist_timeline_chart(df, top_artists, top_n, frequency):
 # TODO: Figure out timezone stuff
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def load_and_process_chunk(uploaded_file, min_seconds=30):
-    """Load and process a single file chunk"""
+def load_and_process_chunk(_uploaded_file, file_signature, min_seconds=30):
+    """Load and process a single file chunk.
+
+    `_uploaded_file` is prefixed with an underscore so Streamlit doesn't try
+    (and fail) to hash it. 
+    `file_signature` (name, size) stands in as the hashable cache key instead, so the 
+    cache still correctly invalidates when the actual file content changes.
+    """
+    del file_signature  # used only as Streamlit's cache key, not needed in body
+
     try:
-        content = uploaded_file.getvalue()
+        content = _uploaded_file.getvalue()
         df = pd.read_json(io.BytesIO(content))
         
         # Convert to datetime and remove timezone info
@@ -801,25 +902,37 @@ def load_and_process_chunk(uploaded_file, min_seconds=30):
         return df
 
     except Exception as e:
-        st.error(f"Error processing {uploaded_file.name}: {str(e)}")
+        st.error(f"Error processing {_uploaded_file.name}: {str(e)}")
         return pd.DataFrame()
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def load_data_optimized(uploaded_files, min_seconds=30):
-    """Optimized data loading with minimum play time filter"""
-    if not uploaded_files:
+def load_data_optimized(_uploaded_files, files_signature, min_seconds=30):
+    """Optimized data loading with minimum play time filter.
+
+    `_uploaded_files` is prefixed with an underscore so Streamlit doesn't try
+    (and fail) to hash the list - it may contain in-memory zip-extracted
+    files that aren't a type Streamlit knows how to fingerprint.
+    `files_signature` (a tuple of (name, size) pairs) stands in as the
+    hashable cache key instead, so the cache still correctly invalidates
+    whenever the actual set of files or their contents change.
+    """
+    if not _uploaded_files:
         return pd.DataFrame()
     
     progress_bar = st.progress(0)
     status_text = st.empty()
     
     all_dfs = []
-    total_files = len(uploaded_files)
+    total_files = len(_uploaded_files)
     total_filtered = 0
     
-    for i, uploaded_file in enumerate(uploaded_files):
+    for i, uploaded_file in enumerate(_uploaded_files):
         status_text.text(f"Processing {uploaded_file.name} ({i+1}/{total_files})")
-        df_chunk = load_and_process_chunk(uploaded_file, min_seconds)
+        df_chunk = load_and_process_chunk(
+            uploaded_file,
+            (uploaded_file.name, uploaded_file.size),
+            min_seconds
+        )
         if not df_chunk.empty:
             all_dfs.append(df_chunk)
             total_filtered += df_chunk.attrs.get('filtered_short_plays', 0)
@@ -980,12 +1093,14 @@ def main():
     # File upload section
     st.sidebar.header("1. Upload Your Data")
 
-    uploaded_files = st.sidebar.file_uploader(
-        "Select Spotify JSON files",
-        type=['json'],
+    uploaded_files_raw = st.sidebar.file_uploader(
+        "Select Spotify JSON files, or just upload the zip Spotify sent you",
+        type=['json', 'zip'],
         accept_multiple_files=True,
-        help="Upload all your Streaming_History_Audio_*.json files"
+        help="Upload your Streaming_History_Audio_*.json files individually, or upload the whole export zip (e.g. my_spotify_data.zip) and we'll pull the right files out automatically."
     )
+
+    uploaded_files = extract_audio_files_from_uploads(uploaded_files_raw) if uploaded_files_raw else []
 
     current_files_signature = (
         tuple((f.name, f.size) for f in uploaded_files)
@@ -1022,7 +1137,7 @@ def main():
 
         if load_button:
             with st.spinner("Loading and processing your Spotify data..."):
-                df = load_data_optimized(uploaded_files, min_seconds)
+                df = load_data_optimized(uploaded_files, current_files_signature, min_seconds)
 
             if df.empty:
                 st.error("No data could be loaded. Please check your files.")
@@ -1062,9 +1177,8 @@ def main():
         2. **Confirm your request** in an email sent to you by Spotify.
         3. **Wait for a results email** from Spotify. 
             - This can take anywhere between a few hours and a few days.
-        4. **Download and unzip** your results folder. 
-        5. **Locate the "Spotify Extended Streaming History" folder** in your download.
-        6. **Upload all the files** that start with **"Streaming_History_Audio_"** using the file browser in this page's sidebar on the left.
+        4. **Download the zip** Spotify emails you ("my_spotify_data.zip").
+        5. **Upload the zip file directly** using the file browser in this page's sidebar on the left.
         7. **Click "Load and Process Data"** to view your listening history. Parameters can be adjusted in the sidebar.
         
         *This app proccesses data locally on your device and does not save it elsewhere.*
